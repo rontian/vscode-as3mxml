@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,6 +27,10 @@ public class LSPUtils
 {
 	public static boolean rangesIntersect(Range r1, Range r2)
 	{
+		if(r1 == null || r2 == null)
+		{
+			return false;
+		}
 		int resultStartLine = r1.getStart().getLine();
 		int resultStartChar = r1.getStart().getCharacter();
 		int resultEndLine = r1.getEnd().getLine();

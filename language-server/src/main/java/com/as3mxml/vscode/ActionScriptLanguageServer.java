@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -63,8 +63,7 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
     private static final String PROPERTY_FRAMEWORK_LIB = "royalelib";
     private static final String FRAMEWORKS_RELATIVE_PATH_PARENT = "../frameworks";
 
-    protected ActionScriptWorkspaceService workspaceService;
-    protected ActionScriptTextDocumentService textDocumentService;
+    protected ActionScriptServices actionScriptServices;
     protected IProjectConfigStrategyFactory projectConfigStrategyFactory;
     protected ActionScriptLanguageClient languageClient;
 
@@ -96,13 +95,25 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
     @Override
     public CompletableFuture<InitializeResult> initialize(InitializeParams params)
     {
-        textDocumentService.setClientCapabilities(params.getCapabilities());
-        textDocumentService.setLanguageClient(languageClient);
-        textDocumentService.setProjectConfigStrategyFactory(projectConfigStrategyFactory);
+        actionScriptServices.setClientCapabilities(params.getCapabilities());
+        actionScriptServices.setLanguageClient(languageClient);
+        actionScriptServices.setProjectConfigStrategyFactory(projectConfigStrategyFactory);
         //setting everything above must happen before adding workspace folders
-        for(WorkspaceFolder folder : params.getWorkspaceFolders())
+        List<WorkspaceFolder> folders = params.getWorkspaceFolders();
+        if(folders != null)
         {
-            textDocumentService.addWorkspaceFolder(folder);
+            for(WorkspaceFolder folder : params.getWorkspaceFolders())
+            {
+                actionScriptServices.addWorkspaceFolder(folder);
+            }
+        }
+        else if(params.getRootUri() != null)
+        {
+            //some clients don't support workspace folders, but if they pass in
+            //a root URI, we can treat it like a workspace folder
+            WorkspaceFolder folder = new WorkspaceFolder();
+            folder.setUri(params.getRootUri());
+            actionScriptServices.addWorkspaceFolder(folder);
         }
 
         InitializeResult result = new InitializeResult();
@@ -163,29 +174,45 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
     @Override
     public void initialized(InitializedParams params)
     {
-        List<FileSystemWatcher> watchers = new ArrayList<>();
-        //ideally, we'd only check .as, .mxml, asconfig.json, and directories
-        //but there's no way to target directories without *
-        watchers.add(new FileSystemWatcher("**/*"));
+        boolean canRegisterDidChangeWatchedFiles = false;
+        try
+        {
+            canRegisterDidChangeWatchedFiles = actionScriptServices.getClientCapabilities().getWorkspace().getDidChangeWatchedFiles().getDynamicRegistration();
+        }
+        catch(NullPointerException e)
+        {
+            canRegisterDidChangeWatchedFiles = false;
+        }
+        if(canRegisterDidChangeWatchedFiles)
+        {
+            List<FileSystemWatcher> watchers = new ArrayList<>();
+            //ideally, we'd only check .as, .mxml, asconfig.json, and directories
+            //but there's no way to target directories without *
+            watchers.add(new FileSystemWatcher("**/*"));
 
-        String id = "as3mxml-language-server-" + Math.random();
-        DidChangeWatchedFilesRegistrationOptions options = new DidChangeWatchedFilesRegistrationOptions(watchers);
-        Registration registration = new Registration(id, "workspace/didChangeWatchedFiles", options);
-        List<Registration> registrations = new ArrayList<>();
-        registrations.add(registration);
+            String id = "as3mxml-language-server-" + Math.random();
+            DidChangeWatchedFilesRegistrationOptions options = new DidChangeWatchedFilesRegistrationOptions(watchers);
+            Registration registration = new Registration(id, "workspace/didChangeWatchedFiles", options);
+            List<Registration> registrations = new ArrayList<>();
+            registrations.add(registration);
 
-        RegistrationParams registrationParams = new RegistrationParams(registrations);
-        languageClient.registerCapability(registrationParams);
+            RegistrationParams registrationParams = new RegistrationParams(registrations);
+            languageClient.registerCapability(registrationParams);
+        }
 
         //we can't notify the client about problems until we receive this
         //initialized notification. this is the first time that we'll start
         //checking for errors.
-        textDocumentService.setInitialized();
+        actionScriptServices.setInitialized();
     }
 
     @Override
     public CompletableFuture<Object> shutdown()
     {
+        if(actionScriptServices != null)
+        {
+            actionScriptServices.shutdown();
+        }
         return CompletableFuture.completedFuture(new Object());
     }
 
@@ -201,12 +228,11 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
     @Override
     public WorkspaceService getWorkspaceService()
     {
-        if (workspaceService == null)
+        if (actionScriptServices == null)
         {
-            workspaceService = new ActionScriptWorkspaceService();
-            workspaceService.textDocumentService = textDocumentService;
+            actionScriptServices = new ActionScriptServices();
         }
-        return workspaceService;
+        return actionScriptServices;
     }
 
     /**
@@ -216,23 +242,19 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
     @Override
     public TextDocumentService getTextDocumentService()
     {
-        if (textDocumentService == null)
+        if (actionScriptServices == null)
         {
-            textDocumentService = new ActionScriptTextDocumentService();
-            if (workspaceService != null)
-            {
-                workspaceService.textDocumentService = textDocumentService;
-            }
+            actionScriptServices = new ActionScriptServices();
         }
-        return textDocumentService;
+        return actionScriptServices;
     }
 
     public void connect(ActionScriptLanguageClient client)
     {
         languageClient = client;
-        if (textDocumentService != null)
+        if (actionScriptServices != null)
         {
-            textDocumentService.setLanguageClient(languageClient);
+            actionScriptServices.setLanguageClient(languageClient);
         }
     }
 

@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,11 +24,6 @@ import findSDKsInPathEnvironmentVariable from "./findSDKsInPathEnvironmentVariab
 
 export default function getFrameworkSDKPathWithFallbacks(): string
 {
-	if(vscode.workspace.workspaceFolders === undefined)
-	{
-		//no open workspace means no SDK
-		return null;
-	}
 	let sdkPath: string = null;
 	let frameworkSetting = <string> vscode.workspace.getConfiguration("as3mxml").get("sdk.framework");
 	if(frameworkSetting)

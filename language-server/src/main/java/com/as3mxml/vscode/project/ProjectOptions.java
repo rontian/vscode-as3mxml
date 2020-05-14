@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,6 +26,12 @@ public class ProjectOptions
 {
     public String type;
     public String config;
+
+    /**
+     * In an application project, the final file must be the main class. Each
+     * path must be absolute and canonical, or there will be problems on Windows
+     * where the drive letter could have different cases.
+     */
     public String[] files;
     public List<String> compilerOptions;
     public String additionalOptions;

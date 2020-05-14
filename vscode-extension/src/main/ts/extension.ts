@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,35 +16,33 @@ limitations under the License.
 import findJava from "./utils/findJava";
 import validateJava from "./utils/validateJava";
 import validateEditorSDK from "./utils/validateEditorSDK";
-import ActionScriptSourcePathDataProvider from "./utils/ActionScriptSourcePathDataProvider";
+import ActionScriptSourcePathDataProvider, { ActionScriptSourcePath } from "./utils/ActionScriptSourcePathDataProvider";
 import ActionScriptTaskProvider from "./utils/ActionScriptTaskProvider";
-import SWFDebugConfigurationProvider from "./utils/SWFDebugConfigurationProvider";
 import SWCTextDocumentContentProvider from "./utils/SWCTextDocumentContentProvider";
 import getJavaClassPathDelimiter from "./utils/getJavaClassPathDelimiter";
 import findSDKShortName from "./utils/findSDKShortName";
 import getFrameworkSDKPathWithFallbacks from "./utils/getFrameworkSDKPathWithFallbacks";
 import selectWorkspaceSDK from "./commands/selectWorkspaceSDK";
-import migrateFlashBuilderProject from "./commands/migrateFlashBuilderProject";
+import { pickProjectInWorkspace, checkForProjectsToImport } from "./commands/importProject";
 import * as path from "path";
 import * as vscode from "vscode";
 import {LanguageClient, LanguageClientOptions, Executable, ExecutableOptions} from "vscode-languageclient";
 import logCompilerShellOutput from "./commands/logCompilerShellOutput";
-import quickCompileAndDebug from "./commands/quickCompileAndDebug";
+import quickCompileAndLaunch from "./commands/quickCompileAndLaunch";
 import migrateSettings from "./utils/migrateSettings";
-import SWFDebugAdapterDescriptorFactory from "./utils/SWFDebugAdapterDescriptorFactory";
 import saveSessionPassword from "./commands/saveSessionPassword";
+import normalizeUri from "./utils/normalizeUri";
+import findQuickCompileWorkspaceFolders from "./commands/findQuickCompileWorkspaceFolders";
 
-const INVALID_SDK_ERROR = "as3mxml.sdk.editor in settings does not point to a valid SDK. Requires Apache Royale 0.9.4 or newer.";
-const MISSING_FRAMEWORK_SDK_ERROR = "You must configure an SDK to enable all ActionScript & MXML features.";
+const INVALID_SDK_ERROR = "as3mxml.sdk.editor in settings does not point to a valid SDK. Requires Apache Royale 0.9.7 or newer.";
 const INVALID_JAVA_ERROR = "as3mxml.java.path in settings does not point to a valid executable. It cannot be a directory, and Java 1.8 or newer is required.";
 const MISSING_JAVA_ERROR = "Could not locate valid Java executable. To configure Java manually, use the as3mxml.java.path setting.";
-const MISSING_WORKSPACE_ROOT_ERROR = "Open a folder and create a file named asconfig.json to enable all ActionScript & MXML language features.";
-const QUICK_COMPILE_LANGUAGE_SERVER_NOT_STARTED_ERROR = "Quick compile failed. Try again after ActionScript & MXML extension is initialized.";
 const INITIALIZING_MESSAGE = "Initializing ActionScript & MXML language server...";
 const RELOAD_WINDOW_MESSAGE = "To apply new settings for ActionScript & MXML, please reload the window.";
 const RELOAD_WINDOW_BUTTON_LABEL = "Reload Window";
-const CONFIGURE_SDK_LABEL = "Configure SDK";
 const STARTUP_ERROR = "The ActionScript & MXML extension failed to start.";
+const QUICK_COMPILE_AND_DEBUG_INIT_MESSAGE = "Quick Compile & Debug is waiting for initialization...";
+const QUICK_COMPILE_AND_RUN_INIT_MESSAGE = "Quick Compile & Run is waiting for initialization...";
 const NO_SDK = "$(alert) No SDK";
 let savedContext: vscode.ExtensionContext;
 let savedLanguageClient: LanguageClient;
@@ -53,38 +51,41 @@ let editorSDKHome: string;
 let javaExecutablePath: string;
 let frameworkSDKHome: string;
 let sdkStatusBarItem: vscode.StatusBarItem;
+let sourcePathView: vscode.TreeView<ActionScriptSourcePath> = null;
 let sourcePathDataProvider: ActionScriptSourcePathDataProvider = null;
 let actionScriptTaskProvider: ActionScriptTaskProvider = null;
-let debugConfigurationProvider: SWFDebugConfigurationProvider = null;
 let swcTextDocumentContentProvider: SWCTextDocumentContentProvider = null;
-let swfDebugAdapterDescriptorFactory: SWFDebugAdapterDescriptorFactory = null;
+let pendingQuickCompileAndDebug = false;
+let pendingQuickCompileAndRun = false;
 
 function getValidatedEditorSDKConfiguration(javaExecutablePath: string): string
 {
-	let result = <string> vscode.workspace.getConfiguration("as3mxml").get("sdk.editor");
+	let result = vscode.workspace.getConfiguration("as3mxml").get("sdk.editor") as string;
 	//this may return null
 	return validateEditorSDK(savedContext.extensionPath, javaExecutablePath, result);
 }
 
 function onDidChangeConfiguration(event: vscode.ConfigurationChangeEvent)
 {
-	let javaSettingsPath = <string> vscode.workspace.getConfiguration("as3mxml").get("java.path");
+	let javaSettingsPath = vscode.workspace.getConfiguration("as3mxml").get("java.path") as string;
 	let newJavaExecutablePath = findJava(javaSettingsPath, (javaPath) =>
 	{
 		return validateJava(savedContext.extensionPath, javaPath);
 	});
 	let newEditorSDKHome = getValidatedEditorSDKConfiguration(newJavaExecutablePath);
 	let newFrameworkSDKHome = getFrameworkSDKPathWithFallbacks();
+	let explicitFrameworkSetting = vscode.workspace.getConfiguration("as3mxml").get("sdk.framework") as string;
+	let frameworkChanged = frameworkSDKHome != newFrameworkSDKHome;
 	let restarting = false;
 	if(event.affectsConfiguration("as3mxml.java.path") ||
-		event.affectsConfiguration("as3mxml.sdk.editor"))
+		event.affectsConfiguration("as3mxml.sdk.editor") ||
+		(frameworkChanged && !explicitFrameworkSetting))
 	{
 		//we're going to try to kill the language server and then restart
 		//it with the new settings
 		restarting = true;
 		restartServer();
 	}
-	let frameworkChanged = frameworkSDKHome != newFrameworkSDKHome;
 	if(editorSDKHome != newEditorSDKHome ||
 		frameworkChanged)
 	{
@@ -140,7 +141,8 @@ export function activate(context: vscode.ExtensionContext)
 {
 	savedContext = context;
 	migrateSettings();
-	let javaSettingsPath = <string> vscode.workspace.getConfiguration("as3mxml").get("java.path");
+	checkForProjectsToImport();
+	let javaSettingsPath = vscode.workspace.getConfiguration("as3mxml").get("java.path") as string;
 	javaExecutablePath = findJava(javaSettingsPath, (javaPath) =>
 	{
 		return validateJava(savedContext.extensionPath, javaPath);
@@ -149,7 +151,7 @@ export function activate(context: vscode.ExtensionContext)
 	frameworkSDKHome = getFrameworkSDKPathWithFallbacks();
 	vscode.workspace.onDidChangeConfiguration(onDidChangeConfiguration);
 
-	vscode.languages.setLanguageConfiguration("nextgenas",
+	vscode.languages.setLanguageConfiguration("actionscript",
 	{
 		//this code is MIT licensed from Microsoft's official TypeScript
 		//extension that's built into VSCode
@@ -214,62 +216,72 @@ export function activate(context: vscode.ExtensionContext)
 	vscode.commands.registerCommand("as3mxml.restartServer", restartServer);
 	vscode.commands.registerCommand("as3mxml.logCompilerShellOutput", logCompilerShellOutput);
 	vscode.commands.registerCommand("as3mxml.saveSessionPassword", saveSessionPassword);
-	vscode.commands.registerCommand("as3mxml.migrateFlashBuilderProject", () =>
+	vscode.commands.registerCommand("as3mxml.importFlashBuilderProject", () =>
 	{
-		if(vscode.workspace.workspaceFolders)
-		{
-			migrateFlashBuilderProject(vscode.workspace.workspaceFolders[0].uri);
-		}
+		pickProjectInWorkspace(true, false);
+	});
+	vscode.commands.registerCommand("as3mxml.importFlashDevelopProject", () =>
+	{
+		pickProjectInWorkspace(false, true);
 	});
 	vscode.commands.registerCommand("as3mxml.quickCompileAndDebug", () =>
-	{	
-		if(!savedLanguageClient || !isLanguageClientReady)
+	{
+		let workspaceFolders = findQuickCompileWorkspaceFolders();
+		if(workspaceFolders.length === 0)
 		{
-			vscode.window.showErrorMessage(QUICK_COMPILE_LANGUAGE_SERVER_NOT_STARTED_ERROR);
+			//no workspace folders with asconfig.json files
 			return;
 		}
-		quickCompileAndDebug();
+		if(!savedLanguageClient || !isLanguageClientReady)
+		{
+			pendingQuickCompileAndDebug = true;
+			pendingQuickCompileAndRun = false;
+			logCompilerShellOutput(QUICK_COMPILE_AND_DEBUG_INIT_MESSAGE, true, false);
+			return;
+		}
+		quickCompileAndLaunch(true);
+	});
+	vscode.commands.registerCommand("as3mxml.quickCompileAndRun", () =>
+	{	
+		let workspaceFolders = findQuickCompileWorkspaceFolders();
+		if(workspaceFolders.length === 0)
+		{
+			//no workspace folders with asconfig.json files
+			return;
+		}
+		if(!savedLanguageClient || !isLanguageClientReady)
+		{
+			pendingQuickCompileAndRun = true;
+			pendingQuickCompileAndDebug = false;
+			logCompilerShellOutput(QUICK_COMPILE_AND_RUN_INIT_MESSAGE, true, false);
+			return;
+		}
+		quickCompileAndLaunch(false);
 	});
 	
 	//don't activate these things unless we're in a workspace
 	if(vscode.workspace.workspaceFolders !== undefined)
 	{
-		sdkStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right);
-		updateSDKStatusBarItem();
-		sdkStatusBarItem.tooltip = "Select ActionScript SDK";
-		sdkStatusBarItem.command = "as3mxml.selectWorkspaceSDK";
-		sdkStatusBarItem.show();
-
 		let rootPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
 		sourcePathDataProvider = new ActionScriptSourcePathDataProvider(rootPath);
-		let sourcePathDisposable = vscode.window.registerTreeDataProvider("actionScriptSourcePaths", sourcePathDataProvider);
-		context.subscriptions.push(sourcePathDisposable);
-
-		actionScriptTaskProvider = new ActionScriptTaskProvider(context, javaExecutablePath);
-		let taskProviderDisposable = vscode.tasks.registerTaskProvider("actionscript", actionScriptTaskProvider);
-		context.subscriptions.push(taskProviderDisposable);
-
-		debugConfigurationProvider = new SWFDebugConfigurationProvider();
-		let debugConfigDisposable = vscode.debug.registerDebugConfigurationProvider("swf", debugConfigurationProvider);
-		context.subscriptions.push(debugConfigDisposable);
-
-		swcTextDocumentContentProvider = new SWCTextDocumentContentProvider();
-		let swcContentDisposable = vscode.workspace.registerTextDocumentContentProvider("swc", swcTextDocumentContentProvider);
-		context.subscriptions.push(swcContentDisposable);
-
-		swfDebugAdapterDescriptorFactory = new SWFDebugAdapterDescriptorFactory(() =>
-		{
-			return(
-				{
-					javaPath: javaExecutablePath,
-					frameworkSDKPath: frameworkSDKHome,
-					editorSDKPath: editorSDKHome,
-				}
-			);
-		});
-		let debugAdapterDisposable = vscode.debug.registerDebugAdapterDescriptorFactory("swf", swfDebugAdapterDescriptorFactory);
-		context.subscriptions.push(debugAdapterDisposable);
+		sourcePathView = vscode.window.createTreeView("actionScriptSourcePaths", {treeDataProvider: sourcePathDataProvider});
+		context.subscriptions.push(sourcePathView);
 	}
+
+	sdkStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right);
+	updateSDKStatusBarItem();
+	sdkStatusBarItem.tooltip = "Select ActionScript & MXML SDK";
+	sdkStatusBarItem.command = "as3mxml.selectWorkspaceSDK";
+	sdkStatusBarItem.show();
+
+	actionScriptTaskProvider = new ActionScriptTaskProvider(context, javaExecutablePath);
+	let taskProviderDisposable = vscode.tasks.registerTaskProvider("actionscript", actionScriptTaskProvider);
+	context.subscriptions.push(taskProviderDisposable);
+
+	swcTextDocumentContentProvider = new SWCTextDocumentContentProvider();
+	let swcContentDisposable = vscode.workspace.registerTextDocumentContentProvider("swc", swcTextDocumentContentProvider);
+	context.subscriptions.push(swcContentDisposable);
+
 	startClient();
 
 	//this is the public API of the extension that may be accessed from other
@@ -305,25 +317,14 @@ export function deactivate()
 
 function hasInvalidJava(): boolean
 {
-	let javaPath = <string> vscode.workspace.getConfiguration("as3mxml").get("java.path");
+	let javaPath = vscode.workspace.getConfiguration("as3mxml").get("java.path") as string;
 	return !javaExecutablePath && javaPath != null;
 }
 
 function hasInvalidEditorSDK(): boolean
 {
-	let sdkPath = <string> vscode.workspace.getConfiguration("as3mxml").get("sdk.editor");
+	let sdkPath = vscode.workspace.getConfiguration("as3mxml").get("sdk.editor") as string;
 	return !editorSDKHome && sdkPath != null;
-}
-
-function showMissingFrameworkSDKError()
-{
-	vscode.window.showErrorMessage(MISSING_FRAMEWORK_SDK_ERROR, CONFIGURE_SDK_LABEL).then((value: string) =>
-	{
-		if(value === CONFIGURE_SDK_LABEL)
-		{
-			selectWorkspaceSDK();
-		}
-	});
 }
 
 function startClient()
@@ -331,20 +332,6 @@ function startClient()
 	if(!savedContext)
 	{
 		//something very bad happened!
-		return;
-	}
-	if(vscode.workspace.workspaceFolders === undefined)
-	{
-		vscode.window.showInformationMessage(MISSING_WORKSPACE_ROOT_ERROR,
-			{ title: "Help", href: "https://github.com/BowlerHatLLC/vscode-as3mxml/wiki" }
-		).then((value) =>
-		{
-			if(value && value.href)
-			{
-				let uri = vscode.Uri.parse(value.href);
-				vscode.commands.executeCommand("vscode.open", uri);
-			}
-		});
 		return;
 	}
 	if(hasInvalidJava())
@@ -362,11 +349,6 @@ function startClient()
 		vscode.window.showErrorMessage(INVALID_SDK_ERROR);
 		return;
 	}
-	if(!frameworkSDKHome)
-	{
-		showMissingFrameworkSDKError();
-		return;
-	}
 
 	vscode.window.withProgress({location: vscode.ProgressLocation.Window}, (progress) =>
 	{
@@ -377,12 +359,50 @@ function startClient()
 			{
 				documentSelector:
 				[
-					{ scheme: "file", language: "nextgenas" },
+					{ scheme: "file", language: "actionscript" },
 					{ scheme: "file", language: "mxml" },
 				],
 				synchronize:
 				{
 					configurationSection: "as3mxml",
+				},
+				uriConverters:
+				{
+					code2Protocol: (value: vscode.Uri) =>
+					{
+						return normalizeUri(value);
+					},
+					//this is just the default behavior, but we need to define both
+					protocol2Code: value => vscode.Uri.parse(value)
+				},
+				middleware:
+				{
+					//TODO: move tags to language server when lsp4j supports it
+					handleDiagnostics: (uri, diagnostics, next) =>
+					{
+						diagnostics.forEach((diagnostic) =>
+						{
+							switch(diagnostic.code)
+							{
+								case "as3mxml-unused-import":
+								case "as3mxml-disabled-config-condition-block":
+								{
+									diagnostic.tags = [vscode.DiagnosticTag.Unnecessary];
+									break;
+								}
+								case "3602":
+								case "3604":
+								case "3606":
+								case "3608":
+								case "3610":
+								{
+									diagnostic.tags = [vscode.DiagnosticTag.Deprecated];
+									break;
+								}
+							}
+						});
+						next(uri, diagnostics);
+					}
 				}
 			};
 			let cpDelimiter = getJavaClassPathDelimiter();
@@ -414,18 +434,24 @@ function startClient()
 			{
 				args.unshift("-Droyalelib=" + path.join(frameworkSDKHome, "frameworks"));
 			}
+			let primaryWorkspaceFolder: vscode.WorkspaceFolder = null;
+			if(vscode.workspace.workspaceFolders !== undefined)
+			{
+				primaryWorkspaceFolder = vscode.workspace.workspaceFolders[0];
+			}
+			//uncomment to allow a debugger to attach to the language server
+			//args.unshift("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005,quiet=y");
 			let executable: Executable =
 			{
 				command: javaExecutablePath,
 				args: args,
 				options:
 				{
-					cwd: vscode.workspace.workspaceFolders[0].uri.fsPath
+					cwd: primaryWorkspaceFolder ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined
 				}
 			};
-			let options: ExecutableOptions;
 			isLanguageClientReady = false;
-			savedLanguageClient = new LanguageClient("nextgenas", "ActionScript & MXML Language Server", executable, clientOptions);
+			savedLanguageClient = new LanguageClient("actionscript", "ActionScript & MXML Language Server", executable, clientOptions);
 			savedLanguageClient.onReady().then(() =>
 			{
 				resolve();
@@ -438,6 +464,16 @@ function startClient()
 				{
 					logCompilerShellOutput(null, false, true);
 				});
+				if(pendingQuickCompileAndDebug)
+				{
+					vscode.commands.executeCommand("as3mxml.quickCompileAndDebug");
+				}
+				else if(pendingQuickCompileAndRun)
+				{
+					vscode.commands.executeCommand("as3mxml.quickCompileAndRun");
+				}
+				pendingQuickCompileAndDebug = false;
+				pendingQuickCompileAndRun = false;
 			}, (reason) =>
 			{
 				resolve();

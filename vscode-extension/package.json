@@ -2,7 +2,7 @@
   "name": "vscode-nextgenas",
   "displayName": "ActionScript & MXML",
   "description": "Language support for ActionScript and MXML",
-  "version": "0.17.0",
+  "version": "1.1.1",
   "publisher": "bowlerhatllc",
   "homepage": "https://as3mxml.com/",
   "repository": {
@@ -15,8 +15,7 @@
   "license": "Apache-2.0",
   "private": true,
   "categories": [
-    "Programming Languages",
-    "Debuggers"
+    "Programming Languages"
   ],
   "keywords": [
     "Flash",
@@ -28,43 +27,50 @@
   "main": "extension",
   "icon": "as3.png",
   "scripts": {
-    "postinstall": "node ./node_modules/vscode/bin/install",
     "build": "mvn clean package",
     "build-debug": "mvn package"
   },
   "engines": {
-    "vscode": "^1.30.0"
+    "vscode": "^1.37.0"
   },
+  "extensionDependencies": [
+    "bowlerhatllc.vscode-swf-debug"
+  ],
   "devDependencies": {
+    "@rgrove/parse-xml": "^2.0.3",
     "@types/json5": "0.0.30",
-    "@types/mocha": "^5.2.5",
-    "@types/node": "^8.10.36",
-    "mocha": "^5.2.0",
-    "typescript": "^3.1.3",
-    "vsce": "^1.51.1",
-    "vscode": "^1.1.21"
-  },
-  "dependencies": {
-    "@rgrove/parse-xml": "^1.1.1",
-    "json5": "^2.1.0",
-    "vscode-jsonrpc": "^4.0.0",
-    "vscode-languageclient": "^5.1.0"
+    "@types/mocha": "^7.0.2",
+    "@types/node": "^10.17.21",
+    "@types/vscode": "^1.37.0",
+    "glob": "^7.1.6",
+    "json5": "2.1.0",
+    "mocha": "^7.1.2",
+    "ts-loader": "^7.0.2",
+    "typescript": "^3.8.3",
+    "vsce": "^1.75.0",
+    "vscode-jsonrpc": "^5.0.1",
+    "vscode-languageclient": "^6.1.3",
+    "webpack": "^4.43.0",
+    "webpack-cli": "^3.3.11"
   },
   "activationEvents": [
-    "onLanguage:nextgenas",
+    "onLanguage:actionscript",
     "onLanguage:mxml",
     "workspaceContains:**/asconfig.json",
     "workspaceContains:**/asconfig.*.json",
+    "workspaceContains:.actionScriptProperties",
+    "workspaceContains:*.as3proj",
     "onView:actionScriptSourcePaths",
     "onCommand:as3mxml.organizeImportsInUri",
     "onCommand:as3mxml.organizeImportsInDirectory",
     "onCommand:as3mxml.saveSessionPassword",
     "onCommand:as3mxml.selectWorkspaceSDK",
     "onCommand:as3mxml.restartServer",
-    "onCommand:as3mxml.migrateFlashBuilderProject",
+    "onCommand:as3mxml.importFlashBuilderProject",
+    "onCommand:as3mxml.importFlashDevelopProject",
     "onCommand:as3mxml.quickCompile",
     "onCommand:as3mxml.quickCompileAndDebug",
-    "onCommand:workbench.action.tasks.runTask"
+    "onCommand:as3mxml.quickCompileAndRun"
   ],
   "contributes": {
     "commands": [
@@ -95,12 +101,32 @@
         "command": "as3mxml.quickCompileAndDebug",
         "title": "Quick Compile & Debug (Experimental)",
         "category": "ActionScript"
+      },
+      {
+        "command": "as3mxml.quickCompileAndRun",
+        "title": "Quick Compile & Run (Experimental)",
+        "category": "ActionScript"
+      },
+      {
+        "command": "as3mxml.importFlashBuilderProject",
+        "title": "Import Adobe Flash Builder Project",
+        "category": "ActionScript"
+      },
+      {
+        "command": "as3mxml.importFlashDevelopProject",
+        "title": "Import FlashDevelop Project",
+        "category": "ActionScript"
       }
     ],
     "keybindings": [
       {
         "key": "ctrl+enter",
         "mac": "cmd+enter",
+        "command": "as3mxml.quickCompileAndRun"
+      },
+      {
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
         "command": "as3mxml.quickCompileAndDebug"
       }
     ],
@@ -131,13 +157,13 @@
         {
           "id": "actionScriptSourcePaths",
           "name": "ActionScript Source Path",
-          "when": "resourceLangId =~ /(nextgenas|mxml)/"
+          "when": "resourceLangId =~ /(actionscript|mxml)/"
         }
       ]
     },
     "languages": [
       {
-        "id": "nextgenas",
+        "id": "actionscript",
         "extensions": [
           ".as"
         ],
@@ -146,7 +172,8 @@
           "AS3",
           "as3",
           "AS",
-          "as"
+          "as",
+          "nextgenas"
         ],
         "configuration": "./actionscript.configuration.json"
       },
@@ -165,12 +192,21 @@
         "id": "jsonc",
         "filenames": [
           "asconfig.json"
+        ],
+        "filenamePatterns": [
+          "asconfig.*.json"
+        ]
+      },
+      {
+        "id": "javascript",
+        "extensions": [
+          ".jsfl"
         ]
       }
     ],
     "grammars": [
       {
-        "language": "nextgenas",
+        "language": "actionscript",
         "scopeName": "source.actionscript.3",
         "path": "./syntaxes/AS3.tmLanguage"
       },
@@ -179,7 +215,8 @@
         "scopeName": "text.mxml",
         "path": "./syntaxes/MXML.tmLanguage",
         "embeddedLanguages": {
-          "meta.cdata.mxml": "nextgenas"
+          "meta.cdata.mxml.script": "actionscript",
+          "entity.name.tag.xml.mxml.style": "css"
         }
       }
     ],
@@ -187,12 +224,16 @@
       {
         "fileMatch": "asconfig.json",
         "url": "./schemas/asconfig.schema.json"
+      },
+      {
+        "fileMatch": "asconfig.*.json",
+        "url": "./schemas/asconfig.schema.json"
       }
     ],
     "problemMatchers": [
       {
         "name": "nextgenas_nomatch",
-        "label": "No Problem Matcher (Default for ActionScript)",
+        "label": "No Problem Matcher (Deprecated: Use empty array instead)",
         "applyTo": "allDocuments",
         "pattern": {
           "regexp": "^$"
@@ -201,7 +242,7 @@
       {
         "name": "royale",
         "label": "Apache Royale",
-        "owner": "nextgenas",
+        "owner": "actionscript",
         "applyTo": "closedDocuments",
         "fileLocation": [
           "absolute"
@@ -217,7 +258,7 @@
       {
         "name": "flex",
         "label": "Classic Flex SDK",
-        "owner": "nextgenas",
+        "owner": "actionscript",
         "applyTo": "closedDocuments",
         "fileLocation": [
           "absolute"
@@ -233,7 +274,7 @@
       {
         "name": "air",
         "label": "Adobe AIR SDK & Compiler",
-        "owner": "nextgenas",
+        "owner": "actionscript",
         "applyTo": "closedDocuments",
         "fileLocation": [
           "absolute"
@@ -273,6 +314,27 @@
             "description": "Indicates if the output folder should be cleaned"
           }
         }
+      },
+      {
+        "type": "animate",
+        "properties": {
+          "debug": {
+            "type": "boolean",
+            "description": "Indicates if the output is a debug or release build"
+          },
+          "publish": {
+            "type": "boolean",
+            "description": "Indicates if the Adobe Animate document should be published or only export the SWF"
+          },
+          "asconfig": {
+            "type": "string",
+            "description": "Optional path to asconfig.json or asconfig.*.json file in workspace"
+          }
+        },
+        "required": [
+          "debug",
+          "publish"
+        ]
       }
     ],
     "configuration": {
@@ -299,10 +361,41 @@
             "type": "string"
           }
         },
+        "as3mxml.problems.realTime": {
+          "type": [
+            "boolean"
+          ],
+          "default": true,
+          "description": "Specifies whether to check for problems in real-time as you type, or only on save."
+        },
+        "as3mxml.problems.showFileOutsideSourcePath": {
+          "type": [
+            "boolean"
+          ],
+          "default": true,
+          "description": "Specifies whether to display a message if a file is outside of the workspace's source path."
+        },
+        "as3mxml.projectImport.prompt": {
+          "type": [
+            "boolean"
+          ],
+          "default": true,
+          "description": "Specifies whether to automatically display a prompt to import a project folder from Adobe Flash Builder when asconfig.json is not present."
+        },
         "as3mxml.asconfigc.useBundled": {
           "type": "boolean",
           "default": true,
           "description": "(Advanced) Indicates if the extension will use the bundled version of asconfigc or a different version that is installed on the system path."
+        },
+        "as3mxml.asconfigc.verboseOutput": {
+          "type": "boolean",
+          "default": false,
+          "description": "(Advanced) Specifies whether asconfigc will display verbose output during builds."
+        },
+        "as3mxml.asconfigc.jvmargs": {
+          "type": "string",
+          "default": null,
+          "description": "(Advanced) Specifies extra arguments that asconfigc will pass to the Java virtual machine when running Java programs. Example: \"-Xmx1024m -noverify\" sets the maximum heap size to 1024 MB and bypasses Java class verification."
         },
         "as3mxml.java.path": {
           "type": [
@@ -318,7 +411,15 @@
             "null"
           ],
           "default": null,
-          "description": "(Advanced) Specifies the folder path of the Apache Royale SDK used internally by the extension for code intelligence. Unless you know what you're doing, you should probably set nextgenas.sdk.framework instead."
+          "description": "(Advanced) Specifies the folder path of the Apache Royale SDK used internally by the extension for code intelligence. Unless you know what you're doing, you should probably set as3mxml.sdk.framework instead."
+        },
+        "as3mxml.sdk.animate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "(Advanced) Specifies the absolute path of the Adobe Animate executable."
         },
         "nextgenas.sdk.framework": {
           "deprecationMessage": "DEPRECATED: Use as3mxml.sdk.framework instead."
@@ -337,220 +438,14 @@
         }
       }
     },
-    "breakpoints": [
-      {
-        "language": "nextgenas"
-      }
-    ],
     "snippets": [
       {
-        "language": "nextgenas",
+        "language": "actionscript",
         "path": "./snippets/actionscript.json"
       },
       {
         "language": "mxml",
         "path": "./snippets/mxml.json"
-      }
-    ],
-    "debuggers": [
-      {
-        "type": "swf",
-        "label": "SWF",
-        "configurationAttributes": {
-          "attach": {
-            "properties": {
-              "connect": {
-                "type": "boolean",
-                "description": "Indicates if the debugger should connect to the runtime instead of listening. May be used for USB debugging on mobile.",
-                "default": false
-              },
-              "port": {
-                "type": "number",
-                "description": "If the \"connect\" attribute is true, the debugger will connect on the specified port.",
-                "multipleOf": 1,
-                "default": 7936
-              },
-              "platform": {
-                "type": "string",
-                "description": "Installs the Adobe AIR application on the specified platform and launches it before attaching to the debugger.",
-                "enum": [
-                  "ios",
-                  "android"
-                ]
-              }
-            }
-          },
-          "launch": {
-            "properties": {
-              "program": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Absolute path to a SWF or AIR application descriptor XML. If omitted, will attempt to detect program automatically."
-              },
-              "profile": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "The device profile to use in AIR Debug Launcher.",
-                "pattern": "^(desktop|extendedDesktop|mobileDevice)$",
-                "default": null
-              },
-              "args": {
-                "type": "array",
-                "description": "Optional arguments to pass to the AIR application.",
-                "items": {
-                  "type": "string"
-                },
-                "default": []
-              },
-              "screensize": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Defines the screen dimensions when running with the mobileDevice profile in AIR Debug Launcher",
-                "pattern": "^((\\d+x\\d+:\\d+x\\d+)|iPhone|iPhoneRetina|iPhone5Retina|iPhone6|iPhone6Plus|iPod|iPodRetina|iPod5Retina|iPad|iPadRetina|Droid|NexusOne|SamsungGalaxyS|SamsungGalaxyTab|QVGA|WQVGA|FWQVGA|HVGA|WVGA|FWVGA|1080|720|480)$",
-                "default": null
-              },
-              "screenDPI": {
-                "type": "number",
-                "description": "Overrides the value returned by Capabilities.screenDPI in the AIR Debug Launcher.",
-                "multipleOf": 1
-              },
-              "versionPlatform": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Overrides the three characters returned by Capabilities.os in the AIR Debug Launcher.",
-                "pattern": "^[A-Z]{3}$",
-                "default": null
-              },
-              "runtimeExecutable": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Path to runtime executable, such as the standalone version of Adobe Flash Player, a web browser, or AIR Debug Launcher.",
-                "default": null
-              },
-              "runtimeArgs": {
-                "type": "array",
-                "description": "Optional arguments to pass to the runtime executable.",
-                "items": {
-                  "type": "string"
-                },
-                "default": []
-              },
-              "extdir": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Path to directory containing unpackaged AIR native extensions for debugging. Relative paths are based on workspace root.",
-                "default": null
-              }
-            }
-          }
-        },
-        "configurationSnippets": [
-          {
-            "label": "SWF: Launch Standalone SWF",
-            "description": "Launch SWF in standalone Adobe Flash Player executable",
-            "body": {
-              "type": "swf",
-              "request": "launch",
-              "name": "${1:Launch SWF}"
-            }
-          },
-          {
-            "label": "SWF: Launch SWF embedded in HTML",
-            "description": "Launch SWF embedded in HTML in a web browser",
-            "body": {
-              "type": "swf",
-              "request": "launch",
-              "name": "${2:Launch SWF}",
-              "program": "^\"\\${workspaceRoot}/${1:index.html}\""
-            }
-          },
-          {
-            "label": "SWF: Launch Adobe AIR desktop",
-            "description": "Launch Adobe AIR desktop application using AIR Debug Launcher",
-            "body": {
-              "type": "swf",
-              "request": "launch",
-              "name": "${1:Launch AIR desktop}"
-            }
-          },
-          {
-            "label": "SWF: Launch Adobe AIR mobile simulator",
-            "description": "Launch Adobe AIR mobile application using AIR Debug Launcher",
-            "body": {
-              "type": "swf",
-              "request": "launch",
-              "name": "${4:Launch AIR mobile}",
-              "profile": "mobileDevice",
-              "screensize": "${1|iPhoneRetina,iPhone,iPhone5Retina,iPhone6,iPhone6Plus,iPad,iPadRetina,Droid,NexusOne,SamsungGalaxyS,SamsungGalaxyTab,480,720,1080,WVGA,WQVGA,QVGA,HVGA,FWVGA,FWQVGA|}",
-              "screenDPI": "^${2:326}",
-              "versionPlatform": "${3|IOS,AND|}"
-            }
-          },
-          {
-            "label": "SWF: Attach SWF",
-            "description": "Attach to Adobe AIR or Flash Player that was launched externally",
-            "body": {
-              "type": "swf",
-              "request": "attach",
-              "name": "${4:Attach SWF}"
-            }
-          },
-          {
-            "label": "SWF: Install & Attach Adobe AIR (iOS)",
-            "description": "Install and attach to Adobe AIR on iOS device",
-            "body": {
-              "type": "swf",
-              "request": "attach",
-              "name": "${4:Install & Attach Adobe AIR (iOS)}",
-              "connect": true,
-              "platform": "ios"
-            }
-          },
-          {
-            "label": "SWF: Install & Attach Adobe AIR (Android)",
-            "description": "Install and attach to Adobe AIR on Android device",
-            "body": {
-              "type": "swf",
-              "request": "attach",
-              "name": "${4:Install & Attach Adobe AIR (Android)}",
-              "connect": true,
-              "platform": "android"
-            }
-          }
-        ]
-      },
-      {
-        "type": "node-royale",
-        "label": "Node.js (Apache Royale)",
-        "enableBreakpointsFor": {
-          "languageIds": [
-            "nextgenas",
-            "mxml"
-          ]
-        },
-        "initialConfigurations": [
-          {
-            "name": "Node.js (Apache Royale) Launch",
-            "type": "node",
-            "request": "launch",
-            "program": "${workspaceRoot}/bin/js-debug/index.js",
-            "cwd": "${workspaceRoot}/bin/js-debug",
-            "sourceMaps": true,
-            "outDir": "${workspaceRoot}/bin/js-debug"
-          }
-        ]
       }
     ]
   }

@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,17 +25,44 @@ const COMMAND_ORGANIZE_IMPORTS_IN_URI = "as3mxml.organizeImportsInUri";
 function openAndEditDocument(uri: vscode.Uri, callback: (editor: vscode.TextEditor) => PromiseLike<void>): PromiseLike<void>
 {
 	return vscode.workspace.openTextDocument(uri)
-		.then((document: vscode.TextDocument) =>
+		.then(
+			(document: vscode.TextDocument) => new Promise(resolve => setTimeout(resolve, 100, document)),
+			(err) => assert(false, "Failed to open text document: " + uri + "\n" + err)
+		)
+		.then((document: vscode.TextDocument) => vscode.window.showTextDocument(document),
+			(err) => assert(false, "Failed to show text document: " + uri + "\n" + err)
+		)
+		.then(callback);
+}
+
+function revertAndCloseActiveEditor(): PromiseLike<void>
+{
+	return vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor").then(() =>
+	{
+		return new Promise(resolve => setTimeout(resolve, 100));
+	});
+}
+
+function revertAndCloseAllEditors()
+{
+	return vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor").then(() =>
+	{
+		return new Promise((resolve, reject) =>
+		{
+			setTimeout(() =>
 			{
-				return vscode.window.showTextDocument(document)
-					.then(callback, (err) =>
-					{
-						assert(false, "Failed to show text document: " + uri);
-					});
-			}, (err) =>
-			{
-				assert(false, "Failed to open text document: " + uri);
-			});
+				if(vscode.window.activeTextEditor)
+				{
+					resolve(revertAndCloseAllEditors());
+					return;
+				}
+				resolve();
+			}, 100);
+		});
+	}, (reason) =>
+	{
+		console.error("close text editor failed:", reason);
+	});
 }
 
 function createRange(startLine: number, startCharacter:number,
@@ -98,7 +125,7 @@ function findSymbolInformation(symbols: vscode.SymbolInformation[], symbolToFind
 		{
 			return false;
 		}
-		if(symbol.location.uri.path !== symbolToFind.location.uri.path)
+		if(symbol.location.uri.toString() !== symbolToFind.location.uri.toString())
 		{
 			return false;
 		}
@@ -173,6 +200,7 @@ suite("ActionScript & MXML extension: Application workspace", () =>
 
 suite("document symbol provider: Application workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeDocumentSymbolProvider not empty", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Main.as"));
@@ -197,14 +225,14 @@ suite("document symbol provider: Application workspace", () =>
 			return vscode.commands.executeCommand("vscode.executeDocumentSymbolProvider", uri)
 				.then((symbols: vscode.DocumentSymbol[]) =>
 					{
-						let classQualifiedName = "Main";
+						let className = "Main";
 						assert.ok(findDocumentSymbol(symbols, new vscode.DocumentSymbol(
-							classQualifiedName,
+							className,
 							null,
 							vscode.SymbolKind.Class,
 							createRange(2, 14),
 							createRange(2, 14))),
-							"vscode.executeDocumentSymbolProvider failed to provide symbol for class: " + classQualifiedName);
+							"vscode.executeDocumentSymbolProvider failed to provide symbol for class: " + className);
 					}, (err) =>
 					{
 						assert(false, "Failed to execute document symbol provider: " + uri);
@@ -219,14 +247,14 @@ suite("document symbol provider: Application workspace", () =>
 			return vscode.commands.executeCommand("vscode.executeDocumentSymbolProvider", uri)
 				.then((symbols: vscode.DocumentSymbol[]) =>
 					{
-						let classQualifiedName = "Main";
+						let className = "Main";
 						assert.ok(findDocumentSymbol(symbols, new vscode.DocumentSymbol(
-							classQualifiedName,
+							className,
 							null,
 							vscode.SymbolKind.Constructor,
 							createRange(16, 18),
 							createRange(16, 18))),
-							"vscode.executeDocumentSymbolProvider failed to provide symbol for constructor: " + classQualifiedName);
+							"vscode.executeDocumentSymbolProvider failed to provide symbol for constructor: " + className);
 					}, (err) =>
 					{
 						assert(false, "Failed to execute document symbol provider: " + uri);
@@ -395,14 +423,14 @@ suite("document symbol provider: Application workspace", () =>
 			return vscode.commands.executeCommand("vscode.executeDocumentSymbolProvider", uri)
 				.then((symbols: vscode.DocumentSymbol[]) =>
 					{
-						let internalClassQualifiedName = "MainInternalClass";
+						let className = "MainInternalClass";
 						assert.ok(findDocumentSymbol(symbols, new vscode.DocumentSymbol(
-							internalClassQualifiedName,
+							className,
 							null,
 							vscode.SymbolKind.Class,
 							createRange(34, 6),
 							createRange(34, 6))),
-							"vscode.executeDocumentSymbolProvider failed to provide symbol for internal class: " + internalClassQualifiedName);
+							"vscode.executeDocumentSymbolProvider failed to provide symbol for internal class: " + className);
 					}, (err) =>
 					{
 						assert(false, "Failed to execute document symbol provider: " + uri);
@@ -435,6 +463,7 @@ suite("document symbol provider: Application workspace", () =>
 
 suite("workspace symbol provider: Application workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeWorkspaceSymbolProvider includes class", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Main.as"));
@@ -820,6 +849,7 @@ suite("workspace symbol provider: Application workspace", () =>
 
 suite("signature help provider: Application workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeSignatureHelpProvider provides help for local function", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "SignatureHelp.as"));
@@ -1072,6 +1102,7 @@ suite("signature help provider: Application workspace", () =>
 
 suite("definition provider: Application workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeDefinitionProvider finds definition of local variable", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Definitions.as"));
@@ -1084,7 +1115,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for local variable definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for local variable definition");
 						assert.strictEqual(location.range.start.line, 42, "vscode.executeDefinitionProvider provided incorrect line for local variable definition");
 						assert.strictEqual(location.range.start.character, 7, "vscode.executeDefinitionProvider provided incorrect character for local variable definition");
 					}, (err) =>
@@ -1105,7 +1136,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of local function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for local function definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for local function definition");
 						assert.strictEqual(location.range.start.line, 43, "vscode.executeDefinitionProvider provided incorrect line for local function definition");
 						assert.strictEqual(location.range.start.character, 12, "vscode.executeDefinitionProvider provided incorrect character for local function definition");
 					}, (err) =>
@@ -1126,7 +1157,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of member variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for member variable definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for member variable definition");
 						assert.strictEqual(location.range.start.line, 14, "vscode.executeDefinitionProvider provided incorrect line for member variable definition");
 						assert.strictEqual(location.range.start.character, 14, "vscode.executeDefinitionProvider provided incorrect character for member variable definition");
 					}, (err) =>
@@ -1147,7 +1178,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of member variable definition with member access operator on this: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for member variable definition with member access operator on this");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for member variable definition with member access operator on this");
 						assert.strictEqual(location.range.start.line, 14, "vscode.executeDefinitionProvider provided incorrect line for member variable definition with member access operator on this");
 						assert.strictEqual(location.range.start.character, 14, "vscode.executeDefinitionProvider provided incorrect character for member variable definition with member access operator on this");
 					}, (err) =>
@@ -1168,7 +1199,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of member function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for member function definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for member function definition");
 						assert.strictEqual(location.range.start.line, 16, "vscode.executeDefinitionProvider provided incorrect line for member function definition");
 						assert.strictEqual(location.range.start.character, 19, "vscode.executeDefinitionProvider provided incorrect character for member function definition");
 					}, (err) =>
@@ -1189,7 +1220,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of member function definition with member access operator on this: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for member function definition with member access operator on this");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for member function definition with member access operator on this");
 						assert.strictEqual(location.range.start.line, 16, "vscode.executeDefinitionProvider provided incorrect line for member function definition with member access operator on this");
 						assert.strictEqual(location.range.start.character, 19, "vscode.executeDefinitionProvider provided incorrect character for member function definition with member access operator on this");
 					}, (err) =>
@@ -1210,7 +1241,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of member property definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for member property definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for member property definition");
 						assert.strictEqual(location.range.start.line, 20, "vscode.executeDefinitionProvider provided incorrect line for member property definition");
 						assert.strictEqual(location.range.start.character, 22, "vscode.executeDefinitionProvider provided incorrect character for member property definition");
 					}, (err) =>
@@ -1231,7 +1262,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of member property definition with member access operator on this: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for member property definition with member access operator on this");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for member property definition with member access operator on this");
 						assert.strictEqual(location.range.start.line, 20, "vscode.executeDefinitionProvider provided incorrect line for member property definition with member access operator on this");
 						assert.strictEqual(location.range.start.character, 22, "vscode.executeDefinitionProvider provided incorrect character for member property definition with member access operator on this");
 					}, (err) =>
@@ -1252,7 +1283,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of static variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for static variable definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for static variable definition");
 						assert.strictEqual(location.range.start.line, 8, "vscode.executeDefinitionProvider provided incorrect line for static variable definition");
 						assert.strictEqual(location.range.start.character, 20, "vscode.executeDefinitionProvider provided incorrect character for static variable definition");
 					}, (err) =>
@@ -1273,7 +1304,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of static variable definition with member access operator on class: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for static variable definition with member access operator on class");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for static variable definition with member access operator on class");
 						assert.strictEqual(location.range.start.line, 8, "vscode.executeDefinitionProvider provided incorrect line for static variable definition with member access operator on class");
 						assert.strictEqual(location.range.start.character, 20, "vscode.executeDefinitionProvider provided incorrect character for static variable definition with member access operator on class");
 					}, (err) =>
@@ -1294,7 +1325,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of static function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for static function definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for static function definition");
 						assert.strictEqual(location.range.start.line, 10, "vscode.executeDefinitionProvider provided incorrect line for static function definition");
 						assert.strictEqual(location.range.start.character, 26, "vscode.executeDefinitionProvider provided incorrect character for static function definition");
 					}, (err) =>
@@ -1315,7 +1346,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of static function definition with member access operator on class: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for static function definition with member access operator on class");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for static function definition with member access operator on class");
 						assert.strictEqual(location.range.start.line, 10, "vscode.executeDefinitionProvider provided incorrect line for static function definition with member access operator on class");
 						assert.strictEqual(location.range.start.character, 26, "vscode.executeDefinitionProvider provided incorrect character for static function definition with member access operator on class");
 					}, (err) =>
@@ -1336,7 +1367,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of static property definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for static property definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for static property definition");
 						assert.strictEqual(location.range.start.line, 29, "vscode.executeDefinitionProvider provided incorrect line for static property definition");
 						assert.strictEqual(location.range.start.character, 29, "vscode.executeDefinitionProvider provided incorrect character for static property definition");
 					}, (err) =>
@@ -1357,7 +1388,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of static property definition with member access operator on class: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for static property definition with member access operator on class");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for static property definition with member access operator on class");
 						assert.strictEqual(location.range.start.line, 29, "vscode.executeDefinitionProvider provided incorrect line for static property definition with member access operator on class");
 						assert.strictEqual(location.range.start.character, 29, "vscode.executeDefinitionProvider provided incorrect character for static property definition with member access operator on class");
 					}, (err) =>
@@ -1379,7 +1410,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of package function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for package function definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for package function definition");
 						assert.strictEqual(location.range.start.line, 2, "vscode.executeDefinitionProvider provided incorrect line for package function definition");
 						assert.strictEqual(location.range.start.character, 17, "vscode.executeDefinitionProvider provided incorrect character for package function definition");
 					}, (err) =>
@@ -1401,7 +1432,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of fully-qualified package function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for fully-qualified package function definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for fully-qualified package function definition");
 						assert.strictEqual(location.range.start.line, 2, "vscode.executeDefinitionProvider provided incorrect line for fully-qualified package function definition");
 						assert.strictEqual(location.range.start.character, 17, "vscode.executeDefinitionProvider provided incorrect character for fully-qualified package function definition");
 					}, (err) =>
@@ -1423,7 +1454,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of package variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for package variable definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for package variable definition");
 						assert.strictEqual(location.range.start.line, 2, "vscode.executeDefinitionProvider provided incorrect line for package variable definition");
 						assert.strictEqual(location.range.start.character, 12, "vscode.executeDefinitionProvider provided incorrect character for package variable definition");
 					}, (err) =>
@@ -1445,7 +1476,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of fully-qualified package variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for fully-qualified package variable definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for fully-qualified package variable definition");
 						assert.strictEqual(location.range.start.line, 2, "vscode.executeDefinitionProvider provided incorrect line for fully-qualified package variable definition");
 						assert.strictEqual(location.range.start.character, 12, "vscode.executeDefinitionProvider provided incorrect character for fully-qualified package variable definition");
 					}, (err) =>
@@ -1467,7 +1498,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super static variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super static variable definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super static variable definition");
 						assert.strictEqual(location.range.start.line, 4, "vscode.executeDefinitionProvider provided incorrect line for super static variable definition");
 						assert.strictEqual(location.range.start.character, 20, "vscode.executeDefinitionProvider provided incorrect character for super static variable definition");
 					}, (err) =>
@@ -1489,7 +1520,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super static variable definition with member access operator on superclass: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super static variable definition with member access operator on superclass");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super static variable definition with member access operator on superclass");
 						assert.strictEqual(location.range.start.line, 4, "vscode.executeDefinitionProvider provided incorrect line for super static variable definition with member access operator on superclass");
 						assert.strictEqual(location.range.start.character, 20, "vscode.executeDefinitionProvider provided incorrect character for super static variable definition with member access operator on superclass");
 					}, (err) =>
@@ -1511,7 +1542,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super static property definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super static property definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super static property definition");
 						assert.strictEqual(location.range.start.line, 6, "vscode.executeDefinitionProvider provided incorrect line for super static property definition");
 						assert.strictEqual(location.range.start.character, 29, "vscode.executeDefinitionProvider provided incorrect character for super static property definition");
 					}, (err) =>
@@ -1533,7 +1564,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super static property definition with member access operator on superclass: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super static property definition with member access operator on superclass");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super static property definition with member access operator on superclass");
 						assert.strictEqual(location.range.start.line, 6, "vscode.executeDefinitionProvider provided incorrect line for super static property definition with member access operator on superclass");
 						assert.strictEqual(location.range.start.character, 29, "vscode.executeDefinitionProvider provided incorrect character for super static property definition with member access operator on superclass");
 					}, (err) =>
@@ -1555,7 +1586,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super static function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super static function definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super static function definition");
 						assert.strictEqual(location.range.start.line, 15, "vscode.executeDefinitionProvider provided incorrect line for super static function definition");
 						assert.strictEqual(location.range.start.character, 28, "vscode.executeDefinitionProvider provided incorrect character for super static function definition");
 					}, (err) =>
@@ -1577,7 +1608,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super static function definition with member access operator on superclass: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super static function definition with member access operator on superclass");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super static function definition with member access operator on superclass");
 						assert.strictEqual(location.range.start.line, 15, "vscode.executeDefinitionProvider provided incorrect line for super static function definition with member access operator on superclass");
 						assert.strictEqual(location.range.start.character, 28, "vscode.executeDefinitionProvider provided incorrect character for super static function definition with member access operator on superclass");
 					}, (err) =>
@@ -1599,7 +1630,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member function definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member function definition");
 						assert.strictEqual(location.range.start.line, 30, "vscode.executeDefinitionProvider provided incorrect line for super member function definition");
 						assert.strictEqual(location.range.start.character, 21, "vscode.executeDefinitionProvider provided incorrect character for super member function definition");
 					}, (err) =>
@@ -1621,7 +1652,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member function definition with member access operator on this: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member function definition with member access operator on this");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member function definition with member access operator on this");
 						assert.strictEqual(location.range.start.line, 30, "vscode.executeDefinitionProvider provided incorrect line for super member function definition with member access operator on this");
 						assert.strictEqual(location.range.start.character, 21, "vscode.executeDefinitionProvider provided incorrect character for super member function definition with member access operator on this");
 					}, (err) =>
@@ -1643,7 +1674,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member function definition with member access operator on super: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member function definition with member access operator on super");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member function definition with member access operator on super");
 						assert.strictEqual(location.range.start.line, 30, "vscode.executeDefinitionProvider provided incorrect line for super member function definition with member access operator on super");
 						assert.strictEqual(location.range.start.character, 21, "vscode.executeDefinitionProvider provided incorrect character for super member function definition with member access operator on super");
 					}, (err) =>
@@ -1665,7 +1696,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member variable definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member variable definition");
 						assert.strictEqual(location.range.start.line, 19, "vscode.executeDefinitionProvider provided incorrect line for super member variable definition");
 						assert.strictEqual(location.range.start.character, 13, "vscode.executeDefinitionProvider provided incorrect character for super member variable definition");
 					}, (err) =>
@@ -1687,7 +1718,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member variable definition with member access operator on this: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member variable definition with member access operator on this");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member variable definition with member access operator on this");
 						assert.strictEqual(location.range.start.line, 19, "vscode.executeDefinitionProvider provided incorrect line for super member variable definition with member access operator on this");
 						assert.strictEqual(location.range.start.character, 13, "vscode.executeDefinitionProvider provided incorrect character for super member variable definition with member access operator on this");
 					}, (err) =>
@@ -1709,7 +1740,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member variable definition with member access operator on super: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member variable definition with member access operator on super");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member variable definition with member access operator on super");
 						assert.strictEqual(location.range.start.line, 19, "vscode.executeDefinitionProvider provided incorrect line for super member variable definition with member access operator on super");
 						assert.strictEqual(location.range.start.character, 13, "vscode.executeDefinitionProvider provided incorrect character for super member variable definition with member access operator on super");
 					}, (err) =>
@@ -1731,7 +1762,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member property definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member property definition");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member property definition");
 						assert.strictEqual(location.range.start.line, 21, "vscode.executeDefinitionProvider provided incorrect line for super member property definition");
 						assert.strictEqual(location.range.start.character, 22, "vscode.executeDefinitionProvider provided incorrect character for super member property definition");
 					}, (err) =>
@@ -1753,7 +1784,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member property definition with member access operator on this: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member property definition with member access operator on this");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member property definition with member access operator on this");
 						assert.strictEqual(location.range.start.line, 21, "vscode.executeDefinitionProvider provided incorrect line for super member property definition with member access operator on this");
 						assert.strictEqual(location.range.start.character, 22, "vscode.executeDefinitionProvider provided incorrect character for super member property definition with member access operator on this");
 					}, (err) =>
@@ -1775,7 +1806,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member property definition with member access operator on super: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member property definition with member access operator on super");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member property definition with member access operator on super");
 						assert.strictEqual(location.range.start.line, 21, "vscode.executeDefinitionProvider provided incorrect line for super member property definition with member access operator on super");
 						assert.strictEqual(location.range.start.character, 22, "vscode.executeDefinitionProvider provided incorrect character for super member property definition with member access operator on super");
 					}, (err) =>
@@ -1797,7 +1828,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of super member property definition with member access operator on super: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, definitionURI.path, "vscode.executeDefinitionProvider provided incorrect uri for super member property definition with member access operator on super");
+						assert.strictEqual(location.uri.toString(), definitionURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for super member property definition with member access operator on super");
 						assert.strictEqual(location.range.start.line, 34, "vscode.executeDefinitionProvider provided incorrect line for super member property definition with member access operator on super");
 						assert.strictEqual(location.range.start.character, 18, "vscode.executeDefinitionProvider provided incorrect character for super member property definition with member access operator on super");
 					}, (err) =>
@@ -1818,7 +1849,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal variable definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal variable definition");
 						assert.strictEqual(location.range.start.line, 113, "vscode.executeDefinitionProvider provided incorrect line for file-internal variable definition");
 						assert.strictEqual(location.range.start.character, 4, "vscode.executeDefinitionProvider provided incorrect character for file-internal variable definition");
 					}, (err) =>
@@ -1839,7 +1870,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal function definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal function definition");
 						assert.strictEqual(location.range.start.line, 112, "vscode.executeDefinitionProvider provided incorrect line for file-internal function definition");
 						assert.strictEqual(location.range.start.character, 9, "vscode.executeDefinitionProvider provided incorrect character for file-internal function definition");
 					}, (err) =>
@@ -1860,7 +1891,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal class definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal class definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal class definition");
 						assert.strictEqual(location.range.start.line, 115, "vscode.executeDefinitionProvider provided incorrect line for file-internal class definition");
 						assert.strictEqual(location.range.start.character, 6, "vscode.executeDefinitionProvider provided incorrect character for file-internal class definition");
 					}, (err) =>
@@ -1881,7 +1912,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal class definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal class definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal class definition");
 						assert.strictEqual(location.range.start.line, 147, "vscode.executeDefinitionProvider provided incorrect line for file-internal class definition");
 						assert.strictEqual(location.range.start.character, 17, "vscode.executeDefinitionProvider provided incorrect character for file-internal class definition");
 					}, (err) =>
@@ -1902,7 +1933,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal member function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal member function definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal member function definition");
 						assert.strictEqual(location.range.start.line, 143, "vscode.executeDefinitionProvider provided incorrect line for file-internal member function definition");
 						assert.strictEqual(location.range.start.character, 17, "vscode.executeDefinitionProvider provided incorrect character for file-internal member function definition");
 					}, (err) =>
@@ -1923,7 +1954,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal member variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal member variable definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal member variable definition");
 						assert.strictEqual(location.range.start.line, 132, "vscode.executeDefinitionProvider provided incorrect line for file-internal member variable definition");
 						assert.strictEqual(location.range.start.character, 12, "vscode.executeDefinitionProvider provided incorrect character for file-internal member variable definition");
 					}, (err) =>
@@ -1944,7 +1975,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal member property definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal member property definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal member property definition");
 						assert.strictEqual(location.range.start.line, 134, "vscode.executeDefinitionProvider provided incorrect line for file-internal member property definition");
 						assert.strictEqual(location.range.start.character, 21, "vscode.executeDefinitionProvider provided incorrect character for file-internal member property definition");
 					}, (err) =>
@@ -1965,7 +1996,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal static property definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal static property definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal static property definition");
 						assert.strictEqual(location.range.start.line, 119, "vscode.executeDefinitionProvider provided incorrect line for file-internal static property definition");
 						assert.strictEqual(location.range.start.character, 28, "vscode.executeDefinitionProvider provided incorrect character for file-internal static property definition");
 					}, (err) =>
@@ -1986,7 +2017,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal static variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal static variable definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal static variable definition");
 						assert.strictEqual(location.range.start.line, 117, "vscode.executeDefinitionProvider provided incorrect line for file-internal static variable definition");
 						assert.strictEqual(location.range.start.character, 19, "vscode.executeDefinitionProvider provided incorrect character for file-internal static variable definition");
 					}, (err) =>
@@ -2007,7 +2038,7 @@ suite("definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeDefinitionProvider failed to provide location of file-internal static function definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, uri.path, "vscode.executeDefinitionProvider provided incorrect uri for file-internal static function definition");
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for file-internal static function definition");
 						assert.strictEqual(location.range.start.line, 128, "vscode.executeDefinitionProvider provided incorrect line for file-internal static function definition");
 						assert.strictEqual(location.range.start.character, 24, "vscode.executeDefinitionProvider provided incorrect character for file-internal static function definition");
 					}, (err) =>
@@ -2020,6 +2051,7 @@ suite("definition provider: Application workspace", () =>
 
 suite("type definition provider: Application workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeTypeDefinitionProvider finds type definition of local variable", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "TypeDefinitions.as"));
@@ -2033,7 +2065,7 @@ suite("type definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeTypeDefinitionProvider failed to provide location of local variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, expected.path, "vscode.executeTypeDefinitionProvider provided incorrect uri for local variable definition");
+						assert.strictEqual(location.uri.toString(), expected.toString(), "vscode.executeTypeDefinitionProvider provided incorrect uri for local variable definition");
 						assert.strictEqual(location.range.start.line, 2, "vscode.executeTypeDefinitionProvider provided incorrect line for local variable definition");
 						assert.strictEqual(location.range.start.character, 14, "vscode.executeTypeDefinitionProvider provided incorrect character for local variable definition");
 					}, (err) =>
@@ -2055,7 +2087,7 @@ suite("type definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeTypeDefinitionProvider failed to provide location of member variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, expected.path, "vscode.executeTypeDefinitionProvider provided incorrect uri for member variable definition");
+						assert.strictEqual(location.uri.toString(), expected.toString(), "vscode.executeTypeDefinitionProvider provided incorrect uri for member variable definition");
 						assert.strictEqual(location.range.start.line, 2, "vscode.executeTypeDefinitionProvider provided incorrect line for member variable definition");
 						assert.strictEqual(location.range.start.character, 14, "vscode.executeTypeDefinitionProvider provided incorrect character for member variable definition");
 					}, (err) =>
@@ -2077,7 +2109,7 @@ suite("type definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeTypeDefinitionProvider failed to provide location of static variable definition: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, expected.path, "vscode.executeTypeDefinitionProvider provided incorrect uri for static variable definition");
+						assert.strictEqual(location.uri.toString(), expected.toString(), "vscode.executeTypeDefinitionProvider provided incorrect uri for static variable definition");
 						assert.strictEqual(location.range.start.line, 2, "vscode.executeTypeDefinitionProvider provided incorrect line for static variable definition");
 						assert.strictEqual(location.range.start.character, 14, "vscode.executeTypeDefinitionProvider provided incorrect character for static variable definition");
 					}, (err) =>
@@ -2099,7 +2131,7 @@ suite("type definition provider: Application workspace", () =>
 						assert.strictEqual(locations.length, 1,
 							"vscode.executeTypeDefinitionProvider failed to provide location of parameter: " + uri);
 						let location = locations[0];
-						assert.strictEqual(location.uri.path, expected.path, "vscode.executeTypeDefinitionProvider provided incorrect uri for parameter definition");
+						assert.strictEqual(location.uri.toString(), expected.toString(), "vscode.executeTypeDefinitionProvider provided incorrect uri for parameter definition");
 						assert.strictEqual(location.range.start.line, 2, "vscode.executeTypeDefinitionProvider provided incorrect line for parameter definition");
 						assert.strictEqual(location.range.start.character, 14, "vscode.executeTypeDefinitionProvider provided incorrect character for parameter definition");
 					}, (err) =>
@@ -2112,6 +2144,7 @@ suite("type definition provider: Application workspace", () =>
 
 suite("hover provider: Application workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeHoverProvider displays hover for local variable", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Definitions.as"));
@@ -3560,10 +3593,147 @@ suite("hover provider: Application workspace", () =>
 					});
 		});
 	});
+	test("vscode.executeHoverProvider displays hover of Number static constant", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "hover", "HoverConstants.as"));
+		let position = new vscode.Position(4, 24);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeHoverProvider", uri, position)
+				.then((hovers: vscode.Hover[]) =>
+					{
+						assert.strictEqual(hovers.length, 1,
+							"vscode.executeHoverProvider failed to provide hover for file-internal static function reference: " + uri);
+						let hover = hovers[0];
+						let contents = hover.contents;
+						assert.strictEqual(contents.length, 1,
+							"vscode.executeHoverProvider failed to provide hover contents for file-internal static function reference: " + uri);
+						let content = contents[0];
+						let contentValue: string;
+						if(typeof content === "string")
+						{
+							contentValue = content;
+						}
+						else
+						{
+							contentValue = content.value;
+						}
+						assert.strictEqual(contentValue.indexOf("(const) com.example.hover.HoverConstants.NUMBER:Number = 2") >= 0, true, "vscode.executeHoverProvider provided incorrect hover");
+						assert.strictEqual(hover.range.start.line, 4, "vscode.executeHoverProvider provided incorrect line");
+						assert.strictEqual(hover.range.start.character, 22, "vscode.executeHoverProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute hover provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeHoverProvider displays hover of Boolean static constant", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "hover", "HoverConstants.as"));
+		let position = new vscode.Position(5, 25);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeHoverProvider", uri, position)
+				.then((hovers: vscode.Hover[]) =>
+					{
+						assert.strictEqual(hovers.length, 1,
+							"vscode.executeHoverProvider failed to provide hover for file-internal static function reference: " + uri);
+						let hover = hovers[0];
+						let contents = hover.contents;
+						assert.strictEqual(contents.length, 1,
+							"vscode.executeHoverProvider failed to provide hover contents for file-internal static function reference: " + uri);
+						let content = contents[0];
+						let contentValue: string;
+						if(typeof content === "string")
+						{
+							contentValue = content;
+						}
+						else
+						{
+							contentValue = content.value;
+						}
+						assert.strictEqual(contentValue.indexOf("(const) com.example.hover.HoverConstants.BOOLEAN:Boolean = false") >= 0, true, "vscode.executeHoverProvider provided incorrect hover");
+						assert.strictEqual(hover.range.start.line, 5, "vscode.executeHoverProvider provided incorrect line");
+						assert.strictEqual(hover.range.start.character, 23, "vscode.executeHoverProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute hover provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeHoverProvider displays hover of String static constant", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "hover", "HoverConstants.as"));
+		let position = new vscode.Position(6, 27);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeHoverProvider", uri, position)
+				.then((hovers: vscode.Hover[]) =>
+					{
+						assert.strictEqual(hovers.length, 1,
+							"vscode.executeHoverProvider failed to provide hover for file-internal static function reference: " + uri);
+						let hover = hovers[0];
+						let contents = hover.contents;
+						assert.strictEqual(contents.length, 1,
+							"vscode.executeHoverProvider failed to provide hover contents for file-internal static function reference: " + uri);
+						let content = contents[0];
+						let contentValue: string;
+						if(typeof content === "string")
+						{
+							contentValue = content;
+						}
+						else
+						{
+							contentValue = content.value;
+						}
+						assert.strictEqual(contentValue.indexOf("(const) com.example.hover.HoverConstants.STRING:String = \"hello\"") >= 0, true, "vscode.executeHoverProvider provided incorrect hover");
+						assert.strictEqual(hover.range.start.line, 6, "vscode.executeHoverProvider provided incorrect line");
+						assert.strictEqual(hover.range.start.character, 25, "vscode.executeHoverProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute hover provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeHoverProvider displays hover of Object static constant", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "hover", "HoverConstants.as"));
+		let position = new vscode.Position(7, 24);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeHoverProvider", uri, position)
+				.then((hovers: vscode.Hover[]) =>
+					{
+						assert.strictEqual(hovers.length, 1,
+							"vscode.executeHoverProvider failed to provide hover for file-internal static function reference: " + uri);
+						let hover = hovers[0];
+						let contents = hover.contents;
+						assert.strictEqual(contents.length, 1,
+							"vscode.executeHoverProvider failed to provide hover contents for file-internal static function reference: " + uri);
+						let content = contents[0];
+						let contentValue: string;
+						if(typeof content === "string")
+						{
+							contentValue = content;
+						}
+						else
+						{
+							contentValue = content.value;
+						}
+						assert.strictEqual(contentValue.indexOf("(const) com.example.hover.HoverConstants.OBJECT:Object") >= 0, true, "vscode.executeHoverProvider provided incorrect hover");
+						assert.strictEqual(hover.range.start.line, 7, "vscode.executeHoverProvider provided incorrect line");
+						assert.strictEqual(hover.range.start.character, 22, "vscode.executeHoverProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute hover provider: " + uri);
+					});
+		});
+	});
 });
 
 suite("completion item provider: Application workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeCompletionItemProvider includes local variable", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Completion.as"));
@@ -6049,6 +6219,7 @@ suite("completion item provider: Application workspace", () =>
 
 suite("MXML completion item provider: Application workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeCompletionItemProvider includes property as attribute", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "MXMLCompletion.mxml"));
@@ -6106,6 +6277,27 @@ suite("MXML completion item provider: Application workspace", () =>
 						assert.strictEqual(propertyItem.kind, vscode.CompletionItemKind.Property, "vscode.executeCompletionItemProvider failed to provide correct kind of property: " + uri);
 						let snippet = propertyItem.insertText as vscode.SnippetString;
 						assert.strictEqual(snippet.value, "<js:className>$0</js:className>", "vscode.executeCompletionItemProvider failed to provide correct insert text for property as child element: " + uri);
+					}, (err) =>
+					{
+						assert(false, "Failed to execute completion item provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCompletionItemProvider includes property as child element (after < bracket and existing prefix)", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "MXMLCompletion.mxml"));
+		let position = new vscode.Position(14, 12);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeCompletionItemProvider", uri, position)
+				.then((list: vscode.CompletionList) =>
+					{
+						let items = list.items;
+						let propertyItem = findCompletionItem("className", items);
+						assert.notEqual(propertyItem, null, "vscode.executeCompletionItemProvider failed to provide property as child element: " + uri);
+						assert.strictEqual(propertyItem.kind, vscode.CompletionItemKind.Property, "vscode.executeCompletionItemProvider failed to provide correct kind of property: " + uri);
+						let snippet = propertyItem.insertText as vscode.SnippetString;
+						assert.strictEqual(snippet.value, "className>$0</js:className>", "vscode.executeCompletionItemProvider failed to provide correct insert text for property as child element: " + uri);
 					}, (err) =>
 					{
 						assert(false, "Failed to execute completion item provider: " + uri);
@@ -6193,6 +6385,27 @@ suite("MXML completion item provider: Application workspace", () =>
 					});
 		});
 	});
+	test("vscode.executeCompletionItemProvider includes member variable as child element (after < bracket and exiting prefix)", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "MXMLCompletion.mxml"));
+		let position = new vscode.Position(14, 12);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeCompletionItemProvider", uri, position)
+				.then((list: vscode.CompletionList) =>
+					{
+						let items = list.items;
+						let propertyItem = findCompletionItem("beads", items);
+						assert.notEqual(propertyItem, null, "vscode.executeCompletionItemProvider failed to provide member variable as child element: " + uri);
+						assert.strictEqual(propertyItem.kind, vscode.CompletionItemKind.Field, "vscode.executeCompletionItemProvider failed to provide correct kind of member variable: " + uri);
+						let snippet = propertyItem.insertText as vscode.SnippetString;
+						assert.strictEqual(snippet.value, "beads>$0</js:beads>", "vscode.executeCompletionItemProvider failed to provide correct insert text for member variable as child element: " + uri);
+					}, (err) =>
+					{
+						assert(false, "Failed to execute completion item provider: " + uri);
+					});
+		});
+	});
 	test("vscode.executeCompletionItemProvider omits member variable as attribute of closing element", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "MXMLCompletion.mxml"));
@@ -6268,6 +6481,27 @@ suite("MXML completion item provider: Application workspace", () =>
 						assert.strictEqual(eventItem.kind, vscode.CompletionItemKind.Event, "vscode.executeCompletionItemProvider failed to provide correct kind of event: " + uri);
 						let snippet = eventItem.insertText as vscode.SnippetString;
 						assert.strictEqual(snippet.value, "<js:click>$0</js:click>", "vscode.executeCompletionItemProvider failed to provide correct insert text for event as child element: " + uri);
+					}, (err) =>
+					{
+						assert(false, "Failed to execute completion item provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCompletionItemProvider includes event as child element (after < bracket and existing prefix)", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "MXMLCompletion.mxml"));
+		let position = new vscode.Position(14, 12);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeCompletionItemProvider", uri, position)
+				.then((list: vscode.CompletionList) =>
+					{
+						let items = list.items;
+						let eventItem = findCompletionItem("click", items);
+						assert.notEqual(eventItem, null, "vscode.executeCompletionItemProvider failed to provide event as child element: " + uri);
+						assert.strictEqual(eventItem.kind, vscode.CompletionItemKind.Event, "vscode.executeCompletionItemProvider failed to provide correct kind of event: " + uri);
+						let snippet = eventItem.insertText as vscode.SnippetString;
+						assert.strictEqual(snippet.value, "click>$0</js:click>", "vscode.executeCompletionItemProvider failed to provide correct insert text for event as child element: " + uri);
 					}, (err) =>
 					{
 						assert(false, "Failed to execute completion item provider: " + uri);
@@ -7346,26 +7580,14 @@ suite("MXML completion item provider: Application workspace", () =>
 
 suite("imports: Application workspace", () =>
 {
-	teardown(() =>
+	teardown(revertAndCloseActiveEditor);
+	test("as3mxml.addImport adds import for qualified class inside package block", () =>
 	{
-		return vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor").then(() =>
-		{
-			return new Promise((resolve, reject) =>
-			{
-				setTimeout(() =>
-				{
-					resolve();
-				}, 100);
-			});
-		});
-	});
-	test("as3mxml.addImport adds import for qualified class with no range", () =>
-	{
-		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Imports.as"));
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "addImport", "AddImport.as"));
 		let qualifiedName = "com.example.PackageClass";
 		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
 		{
-			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, "com.example.PackageClass", uri.toString(), -1, -1)
+			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, qualifiedName, uri.toString(), 6, 9)
 				.then(() =>
 					{
 						return new Promise((resolve, reject) =>
@@ -7378,7 +7600,7 @@ suite("imports: Application workspace", () =>
 								let end = new vscode.Position(4, 0);
 								let range = new vscode.Range(start, end);
 								let importText = editor.document.getText(range);
-								assert.strictEqual(importText, "\timport com.example.PackageClass;\n\n", "as3mxml.addImport failed to add import for class: " + uri);
+								assert.strictEqual(importText, "\timport com.example.PackageClass;\n\n", "as3mxml.addImport failed to add import in file: " + uri);
 								resolve();
 							}, 250);
 						})
@@ -7388,13 +7610,13 @@ suite("imports: Application workspace", () =>
 					});
 		});
 	});
-	test("as3mxml.addImport adds import for qualified class in specific range", () =>
+	test("as3mxml.addImport adds import for qualified interface inside package block", () =>
 	{
-		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Imports.as"));
-		let qualifiedName = "com.example.PackageClass";
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "addImport", "AddImport.as"));
+		let qualifiedName = "com.example.IPackageInterface";
 		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
 		{
-			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, "com.example.PackageClass", uri.toString(), 0, 126)
+			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, qualifiedName, uri.toString(), 7, 26)
 				.then(() =>
 					{
 						return new Promise((resolve, reject) =>
@@ -7407,7 +7629,7 @@ suite("imports: Application workspace", () =>
 								let end = new vscode.Position(4, 0);
 								let range = new vscode.Range(start, end);
 								let importText = editor.document.getText(range);
-								assert.strictEqual(importText, "\timport com.example.PackageClass;\n\n", "as3mxml.addImport failed to add import for class: " + uri);
+								assert.strictEqual(importText, "\timport com.example.IPackageInterface;\n\n", "as3mxml.addImport failed to add import in file: " + uri);
 								resolve();
 							}, 250);
 						})
@@ -7419,11 +7641,11 @@ suite("imports: Application workspace", () =>
 	});
 	test("as3mxml.addImport adds import for qualified class after package block", () =>
 	{
-		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Imports.as"));
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "addImport", "AddImport.as"));
 		let qualifiedName = "com.example.PackageClass";
 		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
 		{
-			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, "com.example.PackageClass", uri.toString(), 127, -1)
+			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, qualifiedName, uri.toString(), 11, 25)
 				.then(() =>
 					{
 						return new Promise((resolve, reject) =>
@@ -7436,7 +7658,123 @@ suite("imports: Application workspace", () =>
 								let end = new vscode.Position(13, 0);
 								let range = new vscode.Range(start, end);
 								let importText = editor.document.getText(range);
-								assert.strictEqual(importText, "import com.example.PackageClass;\n\n", "as3mxml.addImport failed to add import for class: " + uri);
+								assert.strictEqual(importText, "import com.example.PackageClass;\n\n", "as3mxml.addImport failed to add import in file: " + uri);
+								resolve();
+							}, 250);
+						})
+					}, (err) =>
+					{
+						assert(false, "Failed to execute add import command: " + uri);
+					});
+		});
+	});
+	test("as3mxml.addImport adds import for qualified class inside MXML <fx:Script> tag", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "addImport", "MXMLAddImport.mxml"));
+		let qualifiedName = "com.example.PackageClass";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, qualifiedName, uri.toString(), 7, 17)
+				.then(() =>
+					{
+						return new Promise((resolve, reject) =>
+						{
+							//the text edit is not applied immediately, so give
+							//it a short delay before we check
+							setTimeout(() =>
+							{
+								let start = new vscode.Position(5, 0);
+								let end = new vscode.Position(7, 0);
+								let range = new vscode.Range(start, end);
+								let importText = editor.document.getText(range);
+								assert.strictEqual(importText, "\t\t\timport com.example.PackageClass;\n\n", "as3mxml.addImport failed to add import in file: " + uri);
+								resolve();
+							}, 250);
+						})
+					}, (err) =>
+					{
+						assert(false, "Failed to execute add import command: " + uri);
+					});
+		});
+	});
+	test("as3mxml.addImport adds import for qualified class inside MXML event to an empty <fx:Script> tag", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "addImport", "MXMLAddImportFromEventEmptyScript.mxml"));
+		let qualifiedName = "com.example.PackageClass";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, qualifiedName, uri.toString(), 3, 24)
+				.then(() =>
+					{
+						return new Promise((resolve, reject) =>
+						{
+							//the text edit is not applied immediately, so give
+							//it a short delay before we check
+							setTimeout(() =>
+							{
+								let start = new vscode.Position(6, 0);
+								let end = new vscode.Position(8, 0);
+								let range = new vscode.Range(start, end);
+								let importText = editor.document.getText(range);
+								assert.strictEqual(importText, "import com.example.PackageClass;\n\n", "as3mxml.addImport failed to add import in file: " + uri);
+								resolve();
+							}, 250);
+						})
+					}, (err) =>
+					{
+						assert(false, "Failed to execute add import command: " + uri);
+					});
+		});
+	});
+	test("as3mxml.addImport adds import for qualified class inside MXML event with no <fx:Script> tag", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "addImport", "MXMLAddImportFromEventNoScript.mxml"));
+		let qualifiedName = "com.example.PackageClass";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, qualifiedName, uri.toString(), 3, 24)
+				.then(() =>
+					{
+						return new Promise((resolve, reject) =>
+						{
+							//the text edit is not applied immediately, so give
+							//it a short delay before we check
+							setTimeout(() =>
+							{
+								let start = new vscode.Position(4, 0);
+								let end = new vscode.Position(10, 0);
+								let range = new vscode.Range(start, end);
+								let importText = editor.document.getText(range);
+								assert.strictEqual(importText, "\t<fx:Script>\n\t\t<![CDATA[\n\t\t\timport com.example.PackageClass;\n\n\t\t]]>\n\t</fx:Script>\n", "as3mxml.addImport failed to add import in file: " + uri);
+								resolve();
+							}, 250);
+						})
+					}, (err) =>
+					{
+						assert(false, "Failed to execute add import command: " + uri);
+					});
+		});
+	});
+	test("as3mxml.addImport adds import for qualified class inside MXML event with no <mx:Script> tag", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "addImport", "MXMLAddImportNoScript2006.mxml"));
+		let qualifiedName = "com.example.PackageClass";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand(COMMAND_ADD_IMPORT, qualifiedName, uri.toString(), 3, 24)
+				.then(() =>
+					{
+						return new Promise((resolve, reject) =>
+						{
+							//the text edit is not applied immediately, so give
+							//it a short delay before we check
+							setTimeout(() =>
+							{
+								let start = new vscode.Position(4, 0);
+								let end = new vscode.Position(10, 0);
+								let range = new vscode.Range(start, end);
+								let importText = editor.document.getText(range);
+								assert.strictEqual(importText, "\t<mx:Script>\n\t\t<![CDATA[\n\t\t\timport com.example.PackageClass;\n\n\t\t]]>\n\t</mx:Script>\n", "as3mxml.addImport failed to add import in file: " + uri);
 								resolve();
 							}, 250);
 						})
@@ -7450,19 +7788,7 @@ suite("imports: Application workspace", () =>
 
 suite("mxml namespaces: Application workspace", () =>
 {
-	teardown(() =>
-	{
-		return vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor").then(() =>
-		{
-			return new Promise((resolve, reject) =>
-			{
-				setTimeout(() =>
-				{
-					resolve();
-				}, 100);
-			});
-		});
-	});
+	teardown(revertAndCloseActiveEditor);
 	test("as3mxml.addMXMLNamespace adds new namespace", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "MXMLNamespace.mxml"));
@@ -7495,36 +7821,9 @@ suite("mxml namespaces: Application workspace", () =>
 	});
 });
 
-suite("code action provider: Application workspace", () =>
+suite("code action provider: imports : Application workspace", () =>
 {
-	test("vscode.executeCodeActionProvider finds organize imports", () =>
-	{
-		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "OrganizeImports.as"));
-		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
-		{
-			let start = new vscode.Position(2, 45);
-			let end = new vscode.Position(2, 45);
-			let range = new vscode.Range(start, end);
-			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
-				.then((codeActions: vscode.CodeAction[]) =>
-					{
-						let codeAction = codeActions.find((codeAction: vscode.CodeAction) =>
-						{
-							return codeAction.kind.value === vscode.CodeActionKind.SourceOrganizeImports.value;
-						});
-						assert.notEqual(codeAction, null, "Code action not found");
-						assert.strictEqual(codeAction.title, "Organize Imports", "Code action provided incorrect title");
-						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.SourceOrganizeImports.value, "Code action provided incorrect kind");
-						let command = codeAction.command;
-						assert.notEqual(command, null, "Code action command not found");
-						assert.strictEqual(command.command, COMMAND_ORGANIZE_IMPORTS_IN_URI, "Code action provided incorrect command");
-						assert.strictEqual(command.title, "Organize Imports", "Code action provided incorrect command title");
-					}, (err) =>
-					{
-						assert(false, "Failed to execute code actions provider: " + uri);
-					});
-		});
-	});
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeCodeActionProvider finds import for base class", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "CodeActionsImports.as"));
@@ -8283,6 +8582,11 @@ suite("code action provider: Application workspace", () =>
 					});
 		});
 	});
+});
+
+suite("code action provider: generate local variable : Application workspace", () =>
+{
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeCodeActionProvider can generate local variable without this member access", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateVariable.as"));
@@ -8357,6 +8661,57 @@ suite("code action provider: Application workspace", () =>
 					});
 		});
 	});
+	test("vscode.executeCodeActionProvider must not generate local variable with this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateVariable.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(7, 10);
+			let end = new vscode.Position(7, 10);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Local Variable";
+						});
+						assert.strictEqual(codeAction, undefined, "Code action incorrectly found");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider must not generate local variable with this member access for file-internal class", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateVariable.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(17, 10);
+			let end = new vscode.Position(17, 10);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Local Variable";
+						});
+						assert.strictEqual(codeAction, undefined, "Code action incorrectly found");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+});
+
+suite("code action provider: generate field variable : Application workspace", () =>
+{
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeCodeActionProvider can generate field variable without this member access", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateVariable.as"));
@@ -8424,52 +8779,6 @@ suite("code action provider: Application workspace", () =>
 						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
 						assert.strictEqual(range.end.line, 19, "Code action workspace edit provided incorrect end line");
 						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
-
-					}, (err) =>
-					{
-						assert(false, "Failed to execute code actions provider: " + uri);
-					});
-		});
-	});
-	test("vscode.executeCodeActionProvider must not generate local variable with this member access", () =>
-	{
-		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateVariable.as"));
-		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
-		{
-			let start = new vscode.Position(7, 10);
-			let end = new vscode.Position(7, 10);
-			let range = new vscode.Range(start, end);
-			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
-				.then((codeActions: vscode.CodeAction[]) =>
-					{
-						let codeAction = codeActions.find((codeAction) =>
-						{
-							return codeAction.title == "Generate Local Variable";
-						});
-						assert.strictEqual(codeAction, undefined, "Code action incorrectly found");
-
-					}, (err) =>
-					{
-						assert(false, "Failed to execute code actions provider: " + uri);
-					});
-		});
-	});
-	test("vscode.executeCodeActionProvider must not generate local variable with this member access for file-internal class", () =>
-	{
-		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateVariable.as"));
-		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
-		{
-			let start = new vscode.Position(17, 10);
-			let end = new vscode.Position(17, 10);
-			let range = new vscode.Range(start, end);
-			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
-				.then((codeActions: vscode.CodeAction[]) =>
-					{
-						let codeAction = codeActions.find((codeAction) =>
-						{
-							return codeAction.title == "Generate Local Variable";
-						});
-						assert.strictEqual(codeAction, undefined, "Code action incorrectly found");
 
 					}, (err) =>
 					{
@@ -8551,6 +8860,11 @@ suite("code action provider: Application workspace", () =>
 					});
 		});
 	});
+});
+
+suite("code action provider: generate method : Application workspace", () =>
+{
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeCodeActionProvider can generate member method without parameters without this member access", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateMethod.as"));
@@ -8819,6 +9133,11 @@ suite("code action provider: Application workspace", () =>
 					});
 		});
 	});
+});
+
+suite("code action provider: generate getter and setter : Application workspace", () =>
+{
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeCodeActionProvider can generate getter without assignment", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateGetterAndSetter.as"));
@@ -9989,6 +10308,11 @@ suite("code action provider: Application workspace", () =>
 					});
 		});
 	});
+});
+
+suite("code action provider: generate catch : Application workspace", () =>
+{
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeCodeActionProvider can generate catch", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "CodeActionsTry.as"));
@@ -10028,19 +10352,454 @@ suite("code action provider: Application workspace", () =>
 	});
 });
 
+suite("code action provider: generate event listener : Application workspace", () =>
+{
+	suiteTeardown(revertAndCloseAllEditors);
+	test("vscode.executeCodeActionProvider finds generate event listener with string literal and no metadata", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(13, 61);
+			let end = new vscode.Position(13, 61);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function literalWithoutMetadataListener(event:Object):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener with string literal and metadata with missing class", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(14, 81);
+			let end = new vscode.Position(14, 81);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function literalWithMetadataButMissingMetadataClassListener(event:Object):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener with string literal and full metadata", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(15, 66);
+			let end = new vscode.Position(15, 66);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function literalWithMetadataAndClassListener(event:GenerateEventEvent):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener with constant and no metadata", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(16, 81);
+			let end = new vscode.Position(16, 81);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function constantWithoutMetadataListener(event:Object):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener with constant and metadata with missing class", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(17, 105);
+			let end = new vscode.Position(17, 105);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function constantWithMetadataButMissingMetadataClassListener(event:Object):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener with constant and full metadata", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(18, 88);
+			let end = new vscode.Position(18, 88);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function constantWithMetadataAndClassListener(event:GenerateEventEvent):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener with explicit this member access on addEventListener", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(19, 82);
+			let end = new vscode.Position(19, 82);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function explicitThisListener(event:GenerateEventEvent):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener with implement this member access on addEventListener", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(20, 77);
+			let end = new vscode.Position(20, 77);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function implicitThisListener(event:GenerateEventEvent):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener with member access before listener name", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(21, 93);
+			let end = new vscode.Position(21, 93);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\t\tprivate function listenerWithMemberAccess(event:GenerateEventEvent):void\n\t\t{\n\t\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 25, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 25, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider omits generate event listener with non-this member access before listener name", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(22, 99);
+			let end = new vscode.Position(22, 99);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.strictEqual(codeAction, undefined, "Code action must not be found");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider omits generate event listener with function that already exists", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(23, 88);
+			let end = new vscode.Position(23, 88);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.strictEqual(codeAction, undefined, "Code action must not be found");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeCodeActionProvider finds generate event listener in file-internal class", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "GenerateEventListener.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			let start = new vscode.Position(36, 87);
+			let end = new vscode.Position(36, 87);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction) =>
+						{
+							return codeAction.title == "Generate Event Listener";
+						});
+						assert.notEqual(codeAction, undefined, "Code action not found");
+						assert.strictEqual(codeAction.command, undefined, "Code action provided incorrect command");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.QuickFix.value, "Code action provided incorrect kind");
+						let workspaceEdit = codeAction.edit;
+						assert.notEqual(workspaceEdit, undefined, "Code action missing workspace edit");
+						assert.ok(workspaceEdit.has(uri), "Code action workspace edit missing URI: " + uri);
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 1);
+						let textEdit = textEdits[0];
+						assert.strictEqual(textEdit.newText, "\n\tprivate function constantWithMetadataAndClassListener(event:GenerateEventEvent):void\n\t{\n\t}\n", "Code action workspace edit provided incorrect new text");
+						let range = textEdit.range;
+						assert.strictEqual(range.start.line, 38, "Code action workspace edit provided incorrect start line");
+						assert.strictEqual(range.start.character, 0, "Code action workspace edit provided incorrect start character");
+						assert.strictEqual(range.end.line, 38, "Code action workspace edit provided incorrect end line");
+						assert.strictEqual(range.end.character, 0, "Code action workspace edit provided incorrect end character");
+
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
+		});
+	});
+});
+
 suite("organize imports: Application workspace", () =>
 {
-	teardown(() =>
+	teardown(revertAndCloseActiveEditor);
+	test("vscode.executeCodeActionProvider finds organize imports", () =>
 	{
-		return vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor").then(() =>
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "OrganizeImports.as"));
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
 		{
-			return new Promise((resolve, reject) =>
-			{
-				setTimeout(() =>
-				{
-					resolve();
-				}, 100);
-			});
+			let start = new vscode.Position(2, 45);
+			let end = new vscode.Position(2, 45);
+			let range = new vscode.Range(start, end);
+			return vscode.commands.executeCommand("vscode.executeCodeActionProvider", uri, range)
+				.then((codeActions: vscode.CodeAction[]) =>
+					{
+						let codeAction = codeActions.find((codeAction: vscode.CodeAction) =>
+						{
+							return codeAction.kind.value === vscode.CodeActionKind.SourceOrganizeImports.value;
+						});
+						assert.notEqual(codeAction, null, "Code action not found");
+						assert.strictEqual(codeAction.title, "Organize Imports", "Code action provided incorrect title");
+						assert.strictEqual(codeAction.kind.value, vscode.CodeActionKind.SourceOrganizeImports.value, "Code action provided incorrect kind");
+						let command = codeAction.command;
+						assert.notEqual(command, null, "Code action command not found");
+						assert.strictEqual(command.command, COMMAND_ORGANIZE_IMPORTS_IN_URI, "Code action provided incorrect command");
+						assert.strictEqual(command.title, "Organize Imports", "Code action provided incorrect command title");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute code actions provider: " + uri);
+					});
 		});
 	});
 	test("as3mxml.organizeImportsInUri organizes imports in ActionScript: removes unused imports, adds missing imports, and reorganizes remaining imports in alphabetical order", () =>
@@ -10058,11 +10817,11 @@ suite("organize imports: Application workspace", () =>
 							setTimeout(() =>
 							{
 								let start = new vscode.Position(2, 0);
-								let end = new vscode.Position(11, 0);
+								let end = new vscode.Position(12, 0);
 								let range = new vscode.Range(start, end);
 								let generatedText = editor.document.getText(range);
 								assert.strictEqual(generatedText,
-									"\timport com.example.organizeImports.ImportToAdd;\n\timport com.example.organizeImports.ImportToAddFromAsOperator;\n\timport com.example.organizeImports.ImportToAddFromCast;\n\timport com.example.organizeImports.ImportToAddFromIsOperator;\n\timport com.example.organizeImports.ImportToAddFromNew;\n\timport com.example.organizeImports.ImportToAddFromReturnType;\n\timport com.example.organizeImports.ImportToKeepClass;\n\timport com.example.organizeImports.ImportToKeepInterface;\n\n",
+									"\timport com.example.organizeImports.ImportToAdd;\n\timport com.example.organizeImports.ImportToAddFromAsOperator;\n\timport com.example.organizeImports.ImportToAddFromCast;\n\timport com.example.organizeImports.ImportToAddFromIsOperator;\n\timport com.example.organizeImports.ImportToAddFromNew;\n\timport com.example.organizeImports.ImportToAddFromReturnType;\n\timport com.example.organizeImports.ImportToKeepClass;\n\timport com.example.organizeImports.ImportToKeepInterface;\n\timport com.example.organizeImports.wildcards.*;\n\n",
 									"as3mxml.organizeImportsInUri failed to organize imports");
 								resolve();
 							}, 1000);
@@ -10088,11 +10847,11 @@ suite("organize imports: Application workspace", () =>
 							setTimeout(() =>
 							{
 								let start = new vscode.Position(5, 0);
-								let end = new vscode.Position(14, 0);
+								let end = new vscode.Position(15, 0);
 								let range = new vscode.Range(start, end);
 								let generatedText = editor.document.getText(range);
 								assert.strictEqual(generatedText,
-									"\t\t\timport com.example.organizeImports.ImportToAdd;\n\t\t\timport com.example.organizeImports.ImportToAddFromAsOperator;\n\t\t\timport com.example.organizeImports.ImportToAddFromCast;\n\t\t\timport com.example.organizeImports.ImportToAddFromIsOperator;\n\t\t\timport com.example.organizeImports.ImportToAddFromNew;\n\t\t\timport com.example.organizeImports.ImportToAddFromReturnType;\n\t\t\timport com.example.organizeImports.ImportToKeepClass;\n\t\t\timport com.example.organizeImports.ImportToKeepInterface;\n\n",
+									"\t\t\timport com.example.organizeImports.ImportToAdd;\n\t\t\timport com.example.organizeImports.ImportToAddFromAsOperator;\n\t\t\timport com.example.organizeImports.ImportToAddFromCast;\n\t\t\timport com.example.organizeImports.ImportToAddFromIsOperator;\n\t\t\timport com.example.organizeImports.ImportToAddFromNew;\n\t\t\timport com.example.organizeImports.ImportToAddFromReturnType;\n\t\t\timport com.example.organizeImports.ImportToKeepClass;\n\t\t\timport com.example.organizeImports.ImportToKeepInterface;\n\t\t\timport com.example.organizeImports.wildcards.*;\n\n",
 									"as3mxml.organizeImportsInUri failed to organize imports");
 								resolve();
 							}, 1000);
@@ -10134,29 +10893,1243 @@ suite("organize imports: Application workspace", () =>
 	});
 });
 
-/*suite("ActionScript & MXML extension: Library workspace", () =>
+suite("includes: application workspace", () =>
 {
-	test("vscode.extensions.getExtension() and isActive", (done) =>
+	suiteTeardown(revertAndCloseAllEditors);
+	test("vscode.executeDefinitionProvider finds definition of method before include statement", () =>
 	{
-		let oldWorkspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
-		let newWorkspacePath = path.resolve(oldWorkspacePath, "..", "library_workspace");
-		vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders.length, 0, { uri: vscode.Uri.file(newWorkspacePath) });
-		assert.strictEqual(vscode.workspace.workspaceFolders[1].uri.fsPath, newWorkspacePath, `Wrong workspace folder path!`);
-		//wait a bit for the the extension to fully activate because we need
-		//the project to be fully loaded into the compiler for future tests
-		setTimeout(() =>
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "Includes.as"));
+		let position = new vscode.Position(4, 20);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
 		{
-			let extension = vscode.extensions.getExtension(EXTENSION_ID);
-			assert.ok(extension, `Extension "${EXTENSION_ID}" not found!`);
-			assert.ok(extension.isActive, `Extension "${EXTENSION_ID}" not active!`);
-			assert.ok(extension.exports.isLanguageClientReady, `Extension "${EXTENSION_ID}" language client not ready!`);
-			done();
-		}, 6500);
+			return vscode.commands.executeCommand("vscode.executeDefinitionProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 1,
+							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
+						let location = locations[0];
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for definition");
+						assert.strictEqual(location.range.start.line, 4, "vscode.executeDefinitionProvider provided incorrect line for definition");
+						assert.strictEqual(location.range.start.character, 18, "vscode.executeDefinitionProvider provided incorrect character for definition");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute definition provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDefinitionProvider finds definition of method between include statements", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "Includes.as"));
+		let position = new vscode.Position(8, 20);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDefinitionProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 1,
+							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
+						let location = locations[0];
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for definition");
+						assert.strictEqual(location.range.start.line, 8, "vscode.executeDefinitionProvider provided incorrect line for definition");
+						assert.strictEqual(location.range.start.character, 18, "vscode.executeDefinitionProvider provided incorrect character for definition");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute definition provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDefinitionProvider finds definition of method after include statements", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "Includes.as"));
+		let position = new vscode.Position(12, 20);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDefinitionProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 1,
+							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
+						let location = locations[0];
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for definition");
+						assert.strictEqual(location.range.start.line, 12, "vscode.executeDefinitionProvider provided incorrect line for definition");
+						assert.strictEqual(location.range.start.character, 18, "vscode.executeDefinitionProvider provided incorrect character for definition");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute definition provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDefinitionProvider finds definition of method in first file included with include statement", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "scripts", "include1.as"));
+		let position = new vscode.Position(0, 18);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDefinitionProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 1,
+							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
+						let location = locations[0];
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for definition");
+						assert.strictEqual(location.range.start.line, 0, "vscode.executeDefinitionProvider provided incorrect line for definition");
+						assert.strictEqual(location.range.start.character, 16, "vscode.executeDefinitionProvider provided incorrect character for definition");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute definition provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDefinitionProvider finds definition of method in second file included with include statement", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "scripts", "include2.as"))
+		let position = new vscode.Position(1, 18);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDefinitionProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 1,
+							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
+						let location = locations[0];
+						assert.strictEqual(location.uri.toString(), uri.toString(), "vscode.executeDefinitionProvider provided incorrect uri for definition");
+						assert.strictEqual(location.range.start.line, 1, "vscode.executeDefinitionProvider provided incorrect line for definition");
+						assert.strictEqual(location.range.start.character, 16, "vscode.executeDefinitionProvider provided incorrect character for definition");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute definition provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDefinitionProvider finds definition of method in one included file from another included file", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "scripts", "include2.as"));
+		let position = new vscode.Position(3, 3);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDefinitionProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 1,
+							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
+						let location = locations[0];
+						let expectedURI = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "scripts", "include1.as"));
+						assert.strictEqual(location.uri.toString(), expectedURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for definition");
+						assert.strictEqual(location.range.start.line, 0, "vscode.executeDefinitionProvider provided incorrect line for definition");
+						assert.strictEqual(location.range.start.character, 16, "vscode.executeDefinitionProvider provided incorrect character for definition");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute definition provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDefinitionProvider finds definition of method in main file from an included file", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "scripts", "include1.as"));
+		let position = new vscode.Position(2, 3);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDefinitionProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 1,
+							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
+						let location = locations[0];
+						let expectedURI = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "Includes.as"))
+						assert.strictEqual(location.uri.toString(), expectedURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for definition");
+						assert.strictEqual(location.range.start.line, 12, "vscode.executeDefinitionProvider provided incorrect line for definition");
+						assert.strictEqual(location.range.start.character, 18, "vscode.executeDefinitionProvider provided incorrect character for definition");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute definition provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDefinitionProvider finds definition of method in included file from main file", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "Includes.as"));
+		let position = new vscode.Position(14, 4);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDefinitionProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 1,
+							"vscode.executeDefinitionProvider failed to provide location of local variable definition: " + uri);
+						let location = locations[0];
+						let expectedURI = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "includes", "scripts", "include1.as"));
+						assert.strictEqual(location.uri.toString(), expectedURI.toString(), "vscode.executeDefinitionProvider provided incorrect uri for definition");
+						assert.strictEqual(location.range.start.line, 0, "vscode.executeDefinitionProvider provided incorrect line for definition");
+						assert.strictEqual(location.range.start.character, 16, "vscode.executeDefinitionProvider provided incorrect character for definition");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute definition provider: " + uri);
+					});
+		});
+	});
+});
+
+suite("reference provider: Application workspace", () =>
+{
+	suiteTeardown(revertAndCloseAllEditors);
+	test("vscode.executeReferenceProvider finds references to local variable from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(38, 10);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 2,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 38, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 7, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 86, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to local variable from assignment that is not initialization", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(86, 5);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 2,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 38, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 7, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 86, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to local function from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(39, 15);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 2,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 39, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 12, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 88, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to local function from a call", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(88, 5);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 2,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 39, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 12, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 88, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to member variable from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(10, 16);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 10, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 50, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 51, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 8, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to member variable from assignment without this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(50, 5);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 10, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 50, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 51, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 8, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to member variable from assignment with this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(51, 10);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 10, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 50, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 51, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 8, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to member function from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(12, 22);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 12, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 19, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 41, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 42, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 8, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to member function from call without this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(41, 5);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 12, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 19, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 41, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 42, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 8, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to member function from call with this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(42, 10);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 12, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 19, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 41, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 42, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 8, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to static variable from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(4, 22);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 4, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 20, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 47, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 48, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to static variable from assignment without type member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(47, 5);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 4, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 20, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 47, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 48, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to static variable from assignment with type member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(48, 16);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 4, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 20, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 47, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 48, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to static function from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(6, 28);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 6, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 26, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 44, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 45, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to static function from call without type member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(44, 5);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 6, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 26, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 44, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 45, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeReferenceProvider finds references to static function from call with type member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(45, 16);
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeReferenceProvider", uri, position)
+				.then((locations: vscode.Location[]) =>
+					{
+						assert.strictEqual(locations.length, 3,
+							"vscode.executeReferenceProvider failed to provide locations: " + uri);
+						let location1 = locations[0];
+						assert.strictEqual(location1.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location1.range.start.line, 6, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location1.range.start.character, 26, "vscode.executeReferenceProvider provided incorrect character");
+						let location2 = locations[1];
+						assert.strictEqual(location2.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location2.range.start.line, 44, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location2.range.start.character, 3, "vscode.executeReferenceProvider provided incorrect character");
+						let location3 = locations[2];
+						assert.strictEqual(location3.uri.toString(), uri.toString(), "vscode.executeReferenceProvider provided incorrect uri");
+						assert.strictEqual(location3.range.start.line, 45, "vscode.executeReferenceProvider provided incorrect line");
+						assert.strictEqual(location3.range.start.character, 14, "vscode.executeReferenceProvider provided incorrect character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute reference provider: " + uri);
+					});
+		});
+	});
+});
+
+suite("rename provider: Application workspace", () =>
+{
+	suiteTeardown(revertAndCloseAllEditors);
+	test("vscode.executeDocumentRenameProvider finds edits for local variable from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(38, 10);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 2,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 38, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 7, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 38, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 15, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 86, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 86, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 11, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for local variable from assignment that is not initialization", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(86, 5);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 2,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 38, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 7, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 38, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 15, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 86, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 86, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 11, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits to local function from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(39, 15);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 2,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new name");
+						assert.strictEqual(textEdit1.range.start.line, 39, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 12, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 39, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 25, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new name");
+						assert.strictEqual(textEdit2.range.start.line, 88, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 88, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 16, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits to local function from call", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(88, 5);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 2,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new name");
+						assert.strictEqual(textEdit1.range.start.line, 39, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 12, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 39, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 25, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new name");
+						assert.strictEqual(textEdit2.range.start.line, 88, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 88, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 16, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for member variable from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(10, 16);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 10, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 10, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 23, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 50, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 50, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 12, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 51, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 8, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 51, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for member variable from assignment without this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(50, 5);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 10, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 10, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 23, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 50, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 50, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 12, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 51, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 8, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 51, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for member variable from assignment with this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(51, 10);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 10, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 10, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 23, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 50, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 50, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 12, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 51, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 8, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 51, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for member function from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(12, 22);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 12, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 19, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 12, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 33, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 41, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 41, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 42, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 8, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 42, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 22, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for member function from a call without this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(41, 5);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 12, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 19, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 12, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 33, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 41, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 41, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 42, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 8, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 42, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 22, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for member function from a call with this member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(42, 10);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 12, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 19, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 12, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 33, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 41, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 41, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 42, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 8, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 42, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 22, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for static variable from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(4, 22);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 4, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 20, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 4, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 29, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 47, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 47, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 12, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 48, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 48, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 23, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for static variable from assignment without type member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(47, 5);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 4, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 20, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 4, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 29, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 47, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 47, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 12, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 48, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 48, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 23, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for static variable from assignment with type member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(48, 16);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 4, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 20, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 4, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 29, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 47, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 47, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 12, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 48, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 48, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 23, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for static function from its declaration", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(6, 28);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 6, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 26, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 6, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 40, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 44, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 44, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 45, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 45, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 28, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for static function from call without type member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(44, 5);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 6, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 26, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 6, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 40, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 44, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 44, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 45, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 45, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 28, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
+	});
+	test("vscode.executeDocumentRenameProvider finds edits for static function from call with type member access", () =>
+	{
+		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "references", "References.as"));
+		let position = new vscode.Position(45, 16);
+		let newText = "newName";
+		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
+		{
+			return vscode.commands.executeCommand("vscode.executeDocumentRenameProvider", uri, position, newText)
+				.then((workspaceEdit: vscode.WorkspaceEdit) =>
+					{
+						assert.strictEqual(workspaceEdit.size, 1,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of uris");
+						let textEdits = workspaceEdit.get(uri);
+						assert.strictEqual(textEdits.length, 3,
+							"vscode.executeDocumentRenameProvider failed to provide correct number of text edits");
+						let textEdit1 = textEdits[0];
+						assert.strictEqual(textEdit1.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit1.range.start.line, 6, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit1.range.start.character, 26, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit1.range.end.line, 6, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit1.range.end.character, 40, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit2 = textEdits[1];
+						assert.strictEqual(textEdit2.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit2.range.start.line, 44, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit2.range.start.character, 3, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit2.range.end.line, 44, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit2.range.end.character, 17, "vscode.executeDocumentRenameProvider provided incorrect end character");
+						let textEdit3 = textEdits[2];
+						assert.strictEqual(textEdit3.newText, newText, "vscode.executeDocumentRenameProvider provided incorrect new text");
+						assert.strictEqual(textEdit3.range.start.line, 45, "vscode.executeDocumentRenameProvider provided incorrect start line");
+						assert.strictEqual(textEdit3.range.start.character, 14, "vscode.executeDocumentRenameProvider provided incorrect start character");
+						assert.strictEqual(textEdit3.range.end.line, 45, "vscode.executeDocumentRenameProvider provided incorrect end line");
+						assert.strictEqual(textEdit3.range.end.character, 28, "vscode.executeDocumentRenameProvider provided incorrect end character");
+					}, (err) =>
+					{
+						assert(false, "Failed to execute rename provider: " + uri);
+					});
+		});
 	});
 });
 
 suite("document symbol provider: Library workspace", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeDocumentSymbolProvider not empty", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[1].uri.fsPath, "src", "com", "example", "LibraryDocumentSymbols.as"));
@@ -10179,17 +12152,16 @@ suite("document symbol provider: Library workspace", () =>
 		return openAndEditDocument(uri, (editor: vscode.TextEditor) =>
 		{
 			return vscode.commands.executeCommand("vscode.executeDocumentSymbolProvider", uri)
-				.then((symbols: vscode.SymbolInformation[]) =>
+				.then((symbols: vscode.DocumentSymbol[]) =>
 					{
 						let className = "LibraryDocumentSymbols";
-						let packageName = "com.example";
-						assert.ok(findSymbol(symbols, new vscode.SymbolInformation(
+						assert.ok(findDocumentSymbol(symbols, new vscode.DocumentSymbol(
 							className,
+							null,
 							vscode.SymbolKind.Class,
 							createRange(2, 14),
-							uri,
-							packageName)),
-							"vscode.executeDocumentSymbolProvider failed to provide symbol for class: " + packageName);
+							createRange(2, 14))),
+							"vscode.executeDocumentSymbolProvider failed to provide symbol for class: " + className);
 					}, (err) =>
 					{
 						assert(false, "Failed to execute document symbol provider: " + uri);
@@ -10200,10 +12172,12 @@ suite("document symbol provider: Library workspace", () =>
 
 suite("workspace symbol provider: multiple workspaces", () =>
 {
+	suiteTeardown(revertAndCloseAllEditors);
 	test("vscode.executeWorkspaceSymbolProvider includes classes from all workspaces", () =>
 	{
 		let uri = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "Main.as"));
 
+		let packageName = "com.example.workspaceSymbols";
 		let uri1 = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "src", "com", "example", "workspaceSymbols", "WSFindMe1.as"));
 		let className1 = "WSFindMe1";
 		let uri2 = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[1].uri.fsPath, "src", "com", "example", "workspaceSymbols", "WSFindMe2.as"));
@@ -10215,19 +12189,19 @@ suite("workspace symbol provider: multiple workspaces", () =>
 			return vscode.commands.executeCommand("vscode.executeWorkspaceSymbolProvider", query)
 				.then((symbols: vscode.SymbolInformation[]) =>
 					{
-						assert.ok(findSymbol(symbols, new vscode.SymbolInformation(
+						assert.ok(findSymbolInformation(symbols, new vscode.SymbolInformation(
 							className1,
 							vscode.SymbolKind.Class,
 							createRange(2, 14),
 							uri1,
-							"com.example.workspaceSymbols")),
+							packageName)),
 							"vscode.executeWorkspaceSymbolProvider failed to provide symbol for class: " + className1);
-						assert.ok(findSymbol(symbols, new vscode.SymbolInformation(
+						assert.ok(findSymbolInformation(symbols, new vscode.SymbolInformation(
 							className2,
 							vscode.SymbolKind.Class,
 							createRange(2, 14),
 							uri2,
-							"com.example.workspaceSymbols")),
+							packageName)),
 							"vscode.executeWorkspaceSymbolProvider failed to provide symbol for class: " + className2);
 					}, (err) =>
 					{
@@ -10235,4 +12209,4 @@ suite("workspace symbol provider: multiple workspaces", () =>
 					});
 		});
 	});
-});*/
+});

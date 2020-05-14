@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Optional;
 
+import com.as3mxml.vscode.compiler.problems.DisabledConfigConditionBlockProblem;
 import com.as3mxml.vscode.compiler.problems.SyntaxFallbackProblem;
+import com.as3mxml.vscode.compiler.problems.UnusedImportProblem;
+import com.as3mxml.vscode.utils.CompilationUnitUtils.IncludeFileData;
 
 import org.apache.royale.compiler.clients.problems.CompilerProblemCategorizer;
 import org.apache.royale.compiler.common.ISourceLocation;
@@ -38,8 +41,11 @@ import org.apache.royale.compiler.definitions.IPackageDefinition;
 import org.apache.royale.compiler.definitions.IStyleDefinition;
 import org.apache.royale.compiler.definitions.ITypeDefinition;
 import org.apache.royale.compiler.definitions.IVariableDefinition;
+import org.apache.royale.compiler.definitions.IVariableDefinition.VariableClassification;
+import org.apache.royale.compiler.internal.parsing.as.OffsetCue;
 import org.apache.royale.compiler.problems.CompilerProblemSeverity;
 import org.apache.royale.compiler.problems.ICompilerProblem;
+import org.apache.royale.compiler.projects.ICompilerProject;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -54,6 +60,11 @@ import org.eclipse.lsp4j.SymbolKind;
  */
 public class LanguageServerCompilerUtils
 {
+    private static final String FILE_EXTENSION_MXML = ".mxml";
+    private static final String FILE_EXTENSION_AS = ".as";
+    private static final String SDK_LIBRARY_PATH_SIGNATURE_UNIX = "/frameworks/libs/";
+    private static final String SDK_LIBRARY_PATH_SIGNATURE_WINDOWS = "\\frameworks\\libs\\";
+
     /**
      * Converts an URI from the language server protocol to a Path.
      */
@@ -81,6 +92,10 @@ public class LanguageServerCompilerUtils
         if (problem instanceof SyntaxFallbackProblem)
         {
             return DiagnosticSeverity.Information;
+        }
+        if (problem instanceof UnusedImportProblem || problem instanceof DisabledConfigConditionBlockProblem)
+        {
+            return DiagnosticSeverity.Hint;
         }
 
         CompilerProblemCategorizer categorizer = new CompilerProblemCategorizer(null);
@@ -156,6 +171,38 @@ public class LanguageServerCompilerUtils
         range.setEnd(end);
 
         return range;
+    }
+
+    public static int getOffsetFromPosition(Reader reader, Position position, IncludeFileData includeFileData)
+    {
+        int offset = 0;
+        try
+        {
+            offset = getOffsetFromPosition(reader, position);
+        }
+        finally
+        {
+            try
+            {
+                reader.close();
+            }
+            catch(IOException e) {}
+        }
+ 
+        if(includeFileData != null)
+        {
+            int originalOffset = offset;
+            //we're actually going to use the offset from the file that includes
+            //this one
+            for(OffsetCue offsetCue : includeFileData.getOffsetCues())
+            {
+                if(originalOffset >= offsetCue.local)
+                {
+                    offset = originalOffset + offsetCue.adjustment;
+                }
+            }
+        }
+        return offset;
     }
     
     /**
@@ -314,16 +361,20 @@ public class LanguageServerCompilerUtils
         else if (definition instanceof IVariableDefinition)
         {
             IVariableDefinition variableDefinition = (IVariableDefinition) definition;
-            switch(variableDefinition.getVariableClassification())
+            VariableClassification variableClassification = variableDefinition.getVariableClassification();
+            if (variableClassification != null)
             {
-                case INTERFACE_MEMBER:
-                case CLASS_MEMBER:
+                switch(variableClassification)
                 {
-                    return CompletionItemKind.Field;
-                }
-                default:
-                {
-                    return CompletionItemKind.Variable;
+                    case INTERFACE_MEMBER:
+                    case CLASS_MEMBER:
+                    {
+                        return CompletionItemKind.Field;
+                    }
+                    default:
+                    {
+                        return CompletionItemKind.Variable;
+                    }
                 }
             }
         }
@@ -377,16 +428,20 @@ public class LanguageServerCompilerUtils
         else if (definition instanceof IVariableDefinition)
         {
             IVariableDefinition variableDefinition = (IVariableDefinition) definition;
-            switch(variableDefinition.getVariableClassification())
+            VariableClassification variableClassification = variableDefinition.getVariableClassification();
+            if (variableClassification != null)
             {
-                case INTERFACE_MEMBER:
-                case CLASS_MEMBER:
+                switch(variableClassification)
                 {
-                    return SymbolKind.Field;
-                }
-                default:
-                {
-                    return SymbolKind.Variable;
+                    case INTERFACE_MEMBER:
+                    case CLASS_MEMBER:
+                    {
+                        return SymbolKind.Field;
+                    }
+                    default:
+                    {
+                        return SymbolKind.Variable;
+                    }
                 }
             }
         }
@@ -418,16 +473,78 @@ public class LanguageServerCompilerUtils
 
         diagnostic.setMessage(problem.toString());
 
-        try
+        if(diagnostic.getCode() == null)
         {
-            Field field = problem.getClass().getDeclaredField("errorCode");
-            int errorCode = (int) field.get(problem);
-            diagnostic.setCode(Integer.toString(errorCode));
+            try
+            {
+                Field field = problem.getClass().getDeclaredField("errorCode");
+                int errorCode = (int) field.get(problem);
+                diagnostic.setCode(Integer.toString(errorCode));
+            }
+            catch (Exception e)
+            {
+                //skip it
+            }
         }
-        catch (Exception e)
+
+        if(diagnostic.getCode() == null)
         {
-            //skip it
+            try
+            {
+                Field field = problem.getClass().getDeclaredField("warningCode");
+                int errorCode = (int) field.get(problem);
+                diagnostic.setCode(Integer.toString(errorCode));
+            }
+            catch (Exception e)
+            {
+                //skip it
+            }
         }
+
+        if(diagnostic.getCode() == null)
+        {
+            try
+            {
+                Field field = problem.getClass().getDeclaredField("DIAGNOSTIC_CODE");
+                String diagnosticCode = (String) field.get(problem);
+                diagnostic.setCode(diagnosticCode);
+            }
+            catch (Exception e)
+            {
+                //skip it
+            }
+        }
+        
         return diagnostic;
+    }
+
+    public static String getSourcePathFromDefinition(IDefinition definition, ICompilerProject project)
+    {
+        String sourcePath = definition.getSourcePath();
+        if (sourcePath == null)
+        {
+            //I'm not sure why getSourcePath() can sometimes return null, but
+            //getContainingFilePath() seems to work as a fallback -JT
+            sourcePath = definition.getContainingFilePath();
+        }
+        if (sourcePath == null)
+        {
+            return null;
+        }
+        if (!sourcePath.endsWith(FILE_EXTENSION_AS)
+                && !sourcePath.endsWith(FILE_EXTENSION_MXML)
+                && (sourcePath.contains(SDK_LIBRARY_PATH_SIGNATURE_UNIX)
+                || sourcePath.contains(SDK_LIBRARY_PATH_SIGNATURE_WINDOWS)))
+        {
+            //if it's a framework SWC, we're going to attempt to resolve
+            //the real source file 
+            String debugPath = DefinitionUtils.getDefinitionDebugSourceFilePath(definition, project);
+            if (debugPath != null)
+            {
+                //if we can't find the debug source file, keep the SWC extension
+                sourcePath = debugPath;
+            }
+        }
+        return sourcePath;
     }
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,8 +27,33 @@ import com.as3mxml.asconfigc.utils.ProjectUtils;
 
 public class DefaultCompiler implements IASConfigCCompiler
 {
+	public DefaultCompiler()
+	{
+		this(false, null);
+	}
+
+	public DefaultCompiler(boolean verbose, List<String> jvmargs)
+	{
+		this.verbose = verbose;
+		this.jvmargs = jvmargs;
+	}
+
+	private boolean verbose = false;
+	private List<String> jvmargs = null;
+
 	public void compile(String projectType, List<String> compilerOptions, Path workspaceRoot, Path sdkPath) throws ASConfigCException
 	{
+		if(verbose)
+		{
+			if(ProjectType.LIB.equals(projectType))
+			{
+				System.out.println("Compiling library...");
+			}
+			else //app
+			{
+				System.out.println("Compiling application...");
+			}
+		}
 		boolean sdkIsRoyale = ApacheRoyaleUtils.isValidSDK(sdkPath) != null;
 		Path jarPath = ProjectUtils.findCompilerJarPath(projectType, sdkPath.toString(), !sdkIsRoyale);
 		if(jarPath == null)
@@ -58,9 +83,17 @@ public class DefaultCompiler implements IASConfigCCompiler
 			compilerOptions.add(0, "-Dflexlib=" + frameworkPath.toString());
 			compilerOptions.add(0, "-Dflexcompiler=" + sdkPath.toString());
 		}
+		if(jvmargs != null)
+		{
+			compilerOptions.addAll(0, jvmargs);
+		}
 		Path javaExecutablePath = Paths.get(System.getProperty("java.home"), "bin", "java");
 		compilerOptions.add(0, javaExecutablePath.toString());
 
+		if(verbose)
+		{
+			System.out.println(String.join(" ", compilerOptions));
+		}
 		try
 		{
 			File cwd = new File(System.getProperty("user.dir"));

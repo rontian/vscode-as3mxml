@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,20 +16,24 @@ limitations under the License.
 package com.as3mxml.vscode.utils;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
 
 import org.apache.royale.compiler.definitions.IClassDefinition;
 import org.apache.royale.compiler.definitions.IInterfaceDefinition;
 import org.apache.royale.compiler.definitions.INamespaceDefinition;
+import org.apache.royale.compiler.definitions.ITypeDefinition;
 import org.apache.royale.compiler.internal.scopes.ASScope;
 import org.apache.royale.compiler.internal.scopes.TypeScope;
 import org.apache.royale.compiler.projects.ICompilerProject;
+import org.apache.royale.compiler.scopes.IASScope;
+import org.apache.royale.compiler.tree.as.IScopedNode;
 
 public class ScopeUtils
 {
     public static Set<INamespaceDefinition> getNamespaceSetForScopes(TypeScope typeScope, ASScope otherScope, ICompilerProject project)
     {
-        Set<INamespaceDefinition> namespaceSet = otherScope.getNamespaceSet(project);
+        Set<INamespaceDefinition> namespaceSet = new HashSet<>(otherScope.getNamespaceSet(project));
         if (typeScope.getContainingDefinition() instanceof IInterfaceDefinition)
         {
             //interfaces have a special namespace that isn't actually the same
@@ -59,6 +63,22 @@ public class ScopeUtils
             }
         }
         return namespaceSet;
+    }
+
+    public static ITypeDefinition getContainingTypeDefinitionForScope(IScopedNode scopedNode)
+    {
+        IScopedNode currentNode = scopedNode;
+        while (currentNode != null)
+        {
+            IASScope currentScope = currentNode.getScope();
+            if (currentScope instanceof TypeScope)
+            {
+                TypeScope typeScope = (TypeScope) currentScope;
+                return (ITypeDefinition) typeScope.getContainingDefinition();
+            }
+            currentNode = currentNode.getContainingScope();
+        }
+        return null;
     }
 
     private static void collectInterfaceNamespaces(IInterfaceDefinition interfaceDefinition, Set<INamespaceDefinition> namespaceSet, ICompilerProject project)

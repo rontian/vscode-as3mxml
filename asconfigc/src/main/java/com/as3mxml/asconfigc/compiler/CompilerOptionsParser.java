@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -99,6 +99,12 @@ public class CompilerOptionsParser
 					setDefaultSize(options.get(key), result);
 					break;
 				}
+				case CompilerOptions.DEFAULTS_CSS_FILES:
+				{
+					List<String> values = JsonUtils.jsonNodeToListOfStrings(options.get(key));
+					OptionsFormatter.appendPaths(key, values, result);
+					break;
+				}
 				case CompilerOptions.DEFINE:
 				{
 					setDefine(key, options.get(key), result);
@@ -107,6 +113,11 @@ public class CompilerOptionsParser
 				case CompilerOptions.JS_DEFINE:
 				{
 					setDefine(key, options.get(key), result);
+					break;
+				}
+				case CompilerOptions.DIRECTORY:
+				{
+					OptionsFormatter.setBoolean(key, options.get(key).asBoolean(), result);
 					break;
 				}
 				case CompilerOptions.DUMP_CONFIG:
@@ -133,7 +144,18 @@ public class CompilerOptionsParser
 				case CompilerOptions.INCLUDE_CLASSES:
 				{
 					List<String> values = JsonUtils.jsonNodeToListOfStrings(options.get(key));
-					OptionsFormatter.appendValues(key, values, result);
+					OptionsFormatter.setValuesWithCommas(key, values, result);
+					break;
+				}
+				case CompilerOptions.INCLUDE_FILE:
+				{
+					parseIncludeFile(options.get(key), result);
+					break;
+				}
+				case CompilerOptions.INCLUDE_LIBRARIES:
+				{
+					List<String> values = JsonUtils.jsonNodeToListOfStrings(options.get(key));
+					OptionsFormatter.appendPaths(key, values, result);
 					break;
 				}
 				case CompilerOptions.INCLUDE_NAMESPACES:
@@ -181,6 +203,11 @@ public class CompilerOptionsParser
 					OptionsFormatter.setValue(key, options.get(key).asText(), result);
 					break;
 				}
+				case CompilerOptions.KEEP_ALL_TYPE_SELECTORS:
+				{
+					OptionsFormatter.setBoolean(key, options.get(key).asBoolean(), result);
+					break;
+				}
 				case CompilerOptions.KEEP_AS3_METADATA:
 				{
 					List<String> values = JsonUtils.jsonNodeToListOfStrings(options.get(key));
@@ -210,6 +237,12 @@ public class CompilerOptionsParser
 					break;
 				}
 				case CompilerOptions.JS_LOAD_CONFIG:
+				{
+					List<String> values = JsonUtils.jsonNodeToListOfStrings(options.get(key));
+					OptionsFormatter.appendPaths(key, values, result);
+					break;
+				}
+				case CompilerOptions.LOAD_EXTERNS:
 				{
 					List<String> values = JsonUtils.jsonNodeToListOfStrings(options.get(key));
 					OptionsFormatter.appendPaths(key, values, result);
@@ -247,6 +280,11 @@ public class CompilerOptionsParser
 					break;
 				}
 				case CompilerOptions.REMOVE_CIRCULARS:
+				{
+					OptionsFormatter.setBoolean(key, options.get(key).asBoolean(), result);
+					break;
+				}
+				case CompilerOptions.SHOW_UNUSED_TYPE_SELECTOR_WARNINGS:
 				{
 					OptionsFormatter.setBoolean(key, options.get(key).asBoolean(), result);
 					break;
@@ -307,7 +345,16 @@ public class CompilerOptionsParser
 				}
 				case CompilerOptions.THEME:
 				{
-					OptionsFormatter.setPathValue(key, options.get(key).asText(), result);
+					JsonNode themeNode = options.get(key);
+					if(themeNode.isArray())
+					{
+						List<String> values = JsonUtils.jsonNodeToListOfStrings(themeNode);
+						OptionsFormatter.setThenAppendPaths(key, values, result);
+					}
+					else
+					{
+						OptionsFormatter.setPathValue(key, options.get(key).asText(), result);
+					}
 					break;
 				}
 				case CompilerOptions.TOOLS_LOCALE:
@@ -417,6 +464,28 @@ public class CompilerOptionsParser
 			}
 			result.add("--" + optionName + "+=" +
 				defineName + "," + defineValueAsString);
+		}
+	}
+
+	private void parseIncludeFile(JsonNode files, List<String> result)
+	{
+		for(int i = 0, size = files.size(); i < size; i++)
+		{
+			JsonNode file = files.get(i);
+			String src = null;
+			String dest = null;
+			if(file.isTextual())
+			{
+				String filePath = file.asText();
+				src = filePath;
+				dest = filePath;
+			}
+			else
+			{
+				src = file.get(CompilerOptions.INCLUDE_FILE__FILE).asText();
+				dest = file.get(CompilerOptions.INCLUDE_FILE__PATH).asText();
+			}
+			result.add("--" + CompilerOptions.INCLUDE_FILE + "+=" + dest + "," + src);
 		}
 	}
 }

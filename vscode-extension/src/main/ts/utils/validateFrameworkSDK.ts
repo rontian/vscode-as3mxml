@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -62,7 +62,8 @@ function validatePossibleFrameworkSDK(sdkPath: string): boolean
 	//one of these files to describe the SDK is required
 	let airDescription = path.join(sdkPath, "air-sdk-description.xml");
 	let flexDescription = path.join(sdkPath, "flex-sdk-description.xml");
-	if(!fs.existsSync(airDescription) && !fs.existsSync(flexDescription))
+	let royaleDescription = path.join(sdkPath, "royale-sdk-description.xml");
+	if(!fs.existsSync(airDescription) && !fs.existsSync(flexDescription) && !fs.existsSync(royaleDescription))
 	{
 		return false;
 	}

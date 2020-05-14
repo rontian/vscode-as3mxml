@@ -11,7 +11,7 @@
 			],
 			"stopOnEntry": false,
 			"sourceMaps": true,
-			"outDir": "${workspaceRoot}/distribution/target/vscode-as3mxml/vscode-as3mxml",
+			"outFiles": ["${workspaceRoot}/distribution/target/vscode-as3mxml/vscode-as3mxml/**/*.js"],
 			"internalConsoleOptions": "openOnSessionStart",
 			"preLaunchTask": "build-debug"
 		},
@@ -21,15 +21,22 @@
 			"request": "launch",
 			"runtimeExecutable": "${execPath}",
 			"args": [
-				"${workspaceRoot}/vscode-extension/src/test/application_workspace",
+				"${workspaceRoot}/vscode-extension/src/test/tests.code-workspace",
 				"--extensionDevelopmentPath=${workspaceRoot}/distribution/target/vscode-as3mxml/vscode-as3mxml",
 				"--extensionTestsPath=${workspaceRoot}/vscode-extension/target/test"
 			],
 			"stopOnEntry": false,
 			"sourceMaps": true,
-			"outDir": "${workspaceRoot}/vscode-extension/target/test",
+			"outFiles": ["${workspaceRoot}/vscode-extension/target/test/**/*.js"],
 			"internalConsoleOptions": "openOnSessionStart",
 			"preLaunchTask": "build-test"
+		},
+		{
+			"type": "java",
+			"name": "Debug Language Server (Attach)",
+			"request": "attach",
+			"hostName": "localhost",
+			"port": 5005
 		}
 	]
 }

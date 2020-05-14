@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.as3mxml.vscode.utils;
 
 import java.nio.file.Paths;
 
+import org.apache.royale.compiler.common.ISourceLocation;
 import org.apache.royale.compiler.mxml.IMXMLTagData;
 import org.apache.royale.compiler.mxml.IMXMLTextData;
 import org.apache.royale.compiler.mxml.IMXMLUnitData;
@@ -28,7 +29,9 @@ public class ImportRange
 {
 	public String uri = null;
 	public int startIndex = -1;
-	public int endIndex = -1;
+    public int endIndex = -1;
+    public boolean needsMXMLScript = false;
+    public MXMLNamespace mxmlLanguageNS = null;
 
     public static ImportRange fromOffsetTag(IMXMLTagData tagData, int currentOffset)
     {
@@ -58,6 +61,22 @@ public class ImportRange
                 childData = childData.getNextSiblingUnit();
             }
         }
+        else
+        {
+            IMXMLTagData rootTag = tagData.getParent().getRootTag();
+            if(rootTag.hasExplicitCloseTag())
+            {
+                ISourceLocation rootChildRange = rootTag.getLocationOfChildUnits();
+                range.startIndex = rootChildRange.getAbsoluteEnd();
+            }
+            else
+            {
+                range.startIndex = rootTag.getAbsoluteEnd();
+            }
+            range.endIndex = range.startIndex;
+            range.needsMXMLScript = true;
+        }
+        range.mxmlLanguageNS = MXMLNamespaceUtils.getMXMLLanguageNamespace(tagData);
         return range;
     }
 
@@ -68,7 +87,12 @@ public class ImportRange
         {
             return range;
         }
-        range.uri = Paths.get(offsetNode.getSourcePath()).toUri().toString();
+        String sourcePath = offsetNode.getSourcePath();
+        if (sourcePath == null)
+        {
+            return range;
+        }
+        range.uri = Paths.get(sourcePath).toUri().toString();
 
         IPackageNode packageNode = (IPackageNode) offsetNode.getAncestorOfType(IPackageNode.class);
         if (packageNode != null)

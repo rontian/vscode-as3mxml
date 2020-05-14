@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,8 +15,10 @@ limitations under the License.
 */
 package com.as3mxml.vscode;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.net.Socket;
 
 import com.as3mxml.vscode.project.ASConfigProjectConfigStrategy;
@@ -33,13 +35,13 @@ import org.eclipse.lsp4j.jsonrpc.Launcher;
 public class Main
 {
     private static final int SERVER_CONNECT_ERROR = 101;
-    private static final String SYSTEM_PROPERTY_PORT = "nextgeas.vscode.port";
+    private static final String SYSTEM_PROPERTY_PORT = "as3mxml.server.port";
     private static final String SOCKET_HOST = "localhost";
 
     /**
      * The main entry point when the JAR is run. Opens a socket to communicate
      * with Visual Studio Code using the port specified with the
-     * -Dnextgeas.vscode.port command line option. Then, instantiates the
+     * -Das3mxml.server.port command line option. Then, instantiates the
      * ActionScriptLanguageServer, and passes it to the LSP4J library,
      * which handles all of the language server protocol communication.
      * LSP4J calls methods on ActionScriptLanguageServer as requests come in
@@ -48,20 +50,34 @@ public class Main
     public static void main(String[] args)
     {
         String port = System.getProperty(SYSTEM_PROPERTY_PORT);
+        Socket socket = null;
         try
         {
             InputStream inputStream = System.in;
             OutputStream outputStream = System.out;
             if (port != null)
             {
-                Socket socket = new Socket(SOCKET_HOST, Integer.parseInt(port));
+                socket = new Socket(SOCKET_HOST, Integer.parseInt(port));
                 inputStream = socket.getInputStream();
                 outputStream = socket.getOutputStream();
             }
             ASConfigProjectConfigStrategyFactory configFactory = new ASConfigProjectConfigStrategyFactory();
             ActionScriptLanguageServer server = new ActionScriptLanguageServer(configFactory);
-            Launcher<ActionScriptLanguageClient> launcher = Launcher.createLauncher(
-                server, ActionScriptLanguageClient.class, inputStream, outputStream);
+            
+            //to enable LSP inspector output on System.err, change to true
+            boolean lspInspectorTrace = false;
+            Launcher<ActionScriptLanguageClient> launcher = null;
+            if(lspInspectorTrace)
+            {
+                launcher = Launcher.createLauncher(
+                    server, ActionScriptLanguageClient.class, inputStream, outputStream, true, new PrintWriter(System.err));
+            }
+            else
+            {
+                launcher = Launcher.createLauncher(
+                    server, ActionScriptLanguageClient.class, inputStream, outputStream);
+            }
+
             server.connect(launcher.getRemoteProxy());
             launcher.startListening();
         }
@@ -71,6 +87,20 @@ public class Main
             System.err.println("Visit the following URL to file an issue, and please include this log: https://github.com/BowlerHatLLC/vscode-as3mxml/issues");
             e.printStackTrace(System.err);
             System.exit(SERVER_CONNECT_ERROR);
+        }
+        finally
+        {
+            if(socket != null)
+            {
+                try
+                {
+                    socket.close();
+                }
+                catch(IOException e)
+                {
+                    
+                }
+            }
         }
     }
 

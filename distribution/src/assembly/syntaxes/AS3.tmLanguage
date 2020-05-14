@@ -138,7 +138,7 @@
 		<key>class</key>
 		<dict>
 			<key>begin</key>
-			<string>(?x) (^|\s+|;) (\b(dynamic|final)\b\s+)? (\b(internal|public)\b\s+)? (\b(dynamic|final)\b\s+)? (?=\bclass\b)</string>
+			<string>(?x) (^|\s+|;) (\b(dynamic|final|abstract)\b\s+)? (\b(internal|public)\b\s+)? (\b(dynamic|final|abstract)\b\s+)? (?=\bclass\b)</string>
 			<key>beginCaptures</key>
 			<dict>
 				<key>3</key>
@@ -260,7 +260,8 @@
 		<key>class_declaration</key>
 		<dict>
 			<key>begin</key>
-			<string>(?x) \b(class)\b \s+ ([\.\w]+)</string>
+			<!-- dots are displayed in hover tooltips -->
+			<string>(?x) \b(class)\b \s+ ([\.\w]+|\*)</string>
 			<key>beginCaptures</key>
 			<dict>
 				<key>1</key>
@@ -505,12 +506,16 @@
 					<key>include</key>
 					<string>#parameters</string>
 				</dict>
+				<dict>
+					<key>include</key>
+					<string>#comments</string>
+				</dict>
 			</array>
 		</dict>
 		<key>parameters</key>
 		<dict>
 			<key>begin</key>
-			<string>(\.\.\.)?\s*([A-Za-z0-9_\$]+)(?:\s*(\:)\s*([A-Za-z_\$]+))?(?:\s*(=))?</string>
+			<string>(\.\.\.)?\s*([A-Za-z\_\$][A-Za-z0-9_\$]*)(?:\s*(\:)\s*(?:(?:([A-Za-z\$][A-Za-z0-9_\$]+(?:\.[A-Za-z\$][A-Za-z0-9_\$]+)*)(?:\.&lt;([A-Za-z\$][A-Za-z0-9_\$]+(?:\.[A-Za-z\$][A-Za-z0-9_\$]+)*)&gt;)?)|(\*)))?(?:\s*(=))?</string>
 			<key>end</key>
 			<string>,|(?=\))</string>
 			<key>beginCaptures</key>
@@ -533,9 +538,19 @@
 				<key>4</key>
 				<dict>
 					<key>name</key>
-					<string>support.class.actionscript.3</string>
+					<string>support.type.actionscript.3</string>
 				</dict>
 				<key>5</key>
+				<dict>
+					<key>name</key>
+					<string>support.type.actionscript.3</string>
+				</dict>
+				<key>6</key>
+				<dict>
+					<key>name</key>
+					<string>support.type.actionscript.3</string>
+				</dict>
+				<key>7</key>
 				<dict>
 					<key>name</key>
 					<string>keyword.operator.actionscript.3</string>
@@ -739,6 +754,7 @@
 		<key>interface_declaration</key>
 		<dict>
 			<key>begin</key>
+			<!-- dots are displayed in hover tooltips -->
 			<string>(?x) \b(interface)\b \s+ ([\.\w]+)</string>
 			<key>beginCaptures</key>
 			<dict>
@@ -1226,19 +1242,24 @@
 					<key>name</key>
 					<string>keyword.operator.actionscript.3</string>
 				</dict>
+				<key>2</key>
+				<dict>
+					<key>name</key>
+					<string>support.type.actionscript.3</string>
+				</dict>
 				<key>3</key>
 				<dict>
 					<key>name</key>
 					<string>support.type.actionscript.3</string>
 				</dict>
-				<key>5</key>
+				<key>4</key>
 				<dict>
 					<key>name</key>
 					<string>support.type.actionscript.3</string>
 				</dict>
 			</dict>
 			<key>match</key>
-			<string>(\:)\s*(([\.\w]+)(\.&lt;([\.\w]+)&gt;)?|\*)</string>
+			<string>(\:)\s*(?:([A-Za-z\$][A-Za-z0-9_\$]+(?:\.[A-Za-z\$][A-Za-z0-9_\$]+)*)(?:\.&lt;([A-Za-z\$][A-Za-z0-9_\$]+(?:\.[A-Za-z\$][A-Za-z0-9_\$]+)*)&gt;)?)|(\*)</string>
 		</dict>
 		<key>strings</key>
 		<dict>

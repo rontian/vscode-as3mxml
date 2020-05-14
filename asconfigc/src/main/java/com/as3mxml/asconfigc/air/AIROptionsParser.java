@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.as3mxml.asconfigc.air;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
@@ -136,18 +137,6 @@ public class AIROptionsParser
 				}
 			}
 		}
-		if(overridesOptionForPlatform(options, AIROptions.SAMPLER, platform))
-		{
-			setValueWithoutAssignment(AIROptions.SAMPLER, options.get(platform).get(AIROptions.SAMPLER).asText(), result);
-		}
-		if(overridesOptionForPlatform(options, AIROptions.HIDE_ANE_LIB_SYMBOLS, platform))
-		{
-			setValueWithoutAssignment(AIROptions.HIDE_ANE_LIB_SYMBOLS, options.get(platform).get(AIROptions.HIDE_ANE_LIB_SYMBOLS).asText(), result);
-		}
-		if(overridesOptionForPlatform(options, AIROptions.EMBED_BITCODE, platform))
-		{
-			setValueWithoutAssignment(AIROptions.EMBED_BITCODE, options.get(platform).get(AIROptions.EMBED_BITCODE).asText(), result);
-		}
 
 		//DEBUGGER_CONNECTION_OPTIONS begin
 		if(debug && (platform.equals(AIRPlatform.ANDROID) || platform.equals(AIRPlatform.IOS) || platform.equals(AIRPlatform.IOS_SIMULATOR)))
@@ -155,11 +144,32 @@ public class AIROptionsParser
 			parseDebugOptions(options, platform, result);
 		}
 		//DEBUGGER_CONNECTION_OPTIONS end
+		
+		//iOS options begin
+		if(overridesOptionForPlatform(options, AIROptions.SAMPLER, platform))
+		{
+			result.add("-" + AIROptions.SAMPLER);
+		}
+		if(overridesOptionForPlatform(options, AIROptions.HIDE_ANE_LIB_SYMBOLS, platform))
+		{
+			setBooleanValueWithoutAssignment(AIROptions.HIDE_ANE_LIB_SYMBOLS, options.get(platform).get(AIROptions.HIDE_ANE_LIB_SYMBOLS).asBoolean(), result);
+		}
+		if(overridesOptionForPlatform(options, AIROptions.EMBED_BITCODE, platform))
+		{
+			setBooleanValueWithoutAssignment(AIROptions.EMBED_BITCODE, options.get(platform).get(AIROptions.EMBED_BITCODE).asBoolean(), result);
+		}
+		//iOS options end
 
+		//Android options begin
 		if(overridesOptionForPlatform(options, AIROptions.AIR_DOWNLOAD_URL, platform))
 		{
 			setValueWithoutAssignment(AIROptions.AIR_DOWNLOAD_URL, options.get(platform).get(AIROptions.AIR_DOWNLOAD_URL).asText(), result);
 		}
+		if(overridesOptionForPlatform(options, AIROptions.ARCH, platform))
+		{
+			setValueWithoutAssignment(AIROptions.ARCH, options.get(platform).get(AIROptions.ARCH).asText(), result);
+		}
+		//Android options end
 
 		//NATIVE_SIGNING_OPTIONS begin
 		//these are *mobile* signing options only
@@ -213,10 +223,6 @@ public class AIROptionsParser
 		if(overridesOptionForPlatform(options, AIROptions.PLATFORMSDK, platform))
 		{
 			setPathValueWithoutAssignment(AIROptions.PLATFORMSDK, options.get(platform).get(AIROptions.PLATFORMSDK).asText(), result);
-		}
-		if(overridesOptionForPlatform(options, AIROptions.ARCH, platform))
-		{
-			setValueWithoutAssignment(AIROptions.ARCH, options.get(platform).get(AIROptions.ARCH).asText(), result);
 		}
 
 		//FILE_OPTIONS begin
@@ -305,6 +311,12 @@ public class AIROptionsParser
 		result.add(value.toString());
 	}
 	
+	private void setBooleanValueWithoutAssignment(String optionName, boolean value, List<String> result)
+	{
+		result.add("-" + optionName);
+		result.add(value ? "yes" : "no");
+	}
+	
 	private void parseExtdir(JsonNode extdir, List<String> result)
 	{
 		for(int i = 0, size = extdir.size(); i < size; i++)
@@ -316,25 +328,91 @@ public class AIROptionsParser
 
 	private void parseFiles(JsonNode files, List<String> result)
 	{
+		List<File> selfFolders = new ArrayList<>();
+		List<File> rootFolders = new ArrayList<>();
 		for(int i = 0, size = files.size(); i < size; i++)
 		{
-			JsonNode file = files.get(i);
-			if(file.isTextual())
+			JsonNode fileNode = files.get(i);
+			String srcFile = null;
+			String destPath = null;
+			if(fileNode.isTextual())
 			{
-				result.add(file.asText());
+				srcFile = fileNode.asText();
 			}
 			else
 			{
-				String srcFile = file.get(AIROptions.FILES__FILE).asText();
-				String destPath = file.get(AIROptions.FILES__PATH).asText();
-				addFile(new File(srcFile), destPath, result);
+				srcFile = fileNode.get(AIROptions.FILES__FILE).asText();
+				destPath = fileNode.get(AIROptions.FILES__PATH).asText();
 			}
+			File fileToAdd = new File(srcFile);
+			File absoluteFileToAdd = fileToAdd;
+			if(!absoluteFileToAdd.isAbsolute())
+			{
+				absoluteFileToAdd = new File(System.getProperty("user.dir"), srcFile);
+			}
+
+			//for some reason, isDirectory() may not work properly when we check
+			//a file with a relative path
+			if(absoluteFileToAdd.isDirectory())
+			{
+				if(destPath == null)
+				{
+					//add these folders after everything else because we'll use
+					//the -C option
+					selfFolders.add(fileToAdd);
+					continue;
+				}
+				else if(destPath.equals(fileToAdd.getName()))
+				{
+					//add these folders after everything else because we'll use
+					//the -C option
+					selfFolders.add(fileToAdd);
+					continue;
+				}
+				else if(destPath.equals("."))
+				{
+					//add these folders after everything else because we'll use
+					//the -C option
+					rootFolders.add(fileToAdd);
+					continue;
+				}
+			}
+
+			if(destPath == null)
+			{
+				destPath = fileToAdd.getName();
+			}
+			addFile(fileToAdd, destPath, result);
+		}
+		for(File folder : rootFolders)
+		{
+			result.add("-C");
+			result.add(folder.getPath());
+			result.add(".");
+		}
+		for(File folder : selfFolders)
+		{
+			String parentPath = folder.getParent();
+			if(parentPath == null)
+			{
+				parentPath = ".";
+			}
+			result.add("-C");
+			result.add(parentPath);
+			result.add(folder.getName());
 		}
 	}
 
 	private void addFile(File srcFile, String destPath, List<String> result)
 	{
-		if(srcFile.isDirectory())
+		File absoluteSrcFile = srcFile;
+		if(!absoluteSrcFile.isAbsolute())
+		{
+			absoluteSrcFile = new File(System.getProperty("user.dir"), srcFile.getPath());
+		}
+		//for some reason, isDirectory() may not work properly when we check
+		//a file with a relative path
+		if(absoluteSrcFile.isDirectory())
 		{
 			//Adobe's documentation for adt says that the -e option can
 			//accept a directory, but it only seems to work with files, so

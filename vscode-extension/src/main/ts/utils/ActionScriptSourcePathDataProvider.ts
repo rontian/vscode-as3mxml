@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ export class ActionScriptSourcePath extends vscode.TreeItem
 				let extname = path.extname(uri.fsPath);
 				if(extname === FILE_EXTENSION_AS)
 				{
-					contextValue = "nextgenas";
+					contextValue = "actionscript";
 				}
 				else if(extname === FILE_EXTENSION_MXML)
 				{

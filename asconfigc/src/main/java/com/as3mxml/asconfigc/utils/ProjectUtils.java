@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,8 +22,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.as3mxml.asconfigc.compiler.ProjectType;
 
@@ -34,11 +36,19 @@ public class ProjectUtils
 	public static String findAIRDescriptorOutputPath(String mainFile, String airDescriptor, String outputPath, boolean isSWF, boolean debugBuild)
 	{
 		String outputDir = ProjectUtils.findOutputDirectory(mainFile, outputPath, isSWF);
-		Path path = Paths.get(airDescriptor);
+		String fileName = null;
+		if(airDescriptor == null)
+		{
+			fileName = generateApplicationID(mainFile, outputPath) + "-app.xml";
+		}
+		else
+		{
+			fileName = Paths.get(airDescriptor).getFileName().toString();
+		}
 		if(isSWF)
 		{
 			Path outputDirPath = Paths.get(outputDir);
-			return outputDirPath.resolve(path.getFileName().toString()).toString();
+			return outputDirPath.resolve(fileName).toString();
 		}
 		String jsDir = "js-release";
 		if(debugBuild)
@@ -46,7 +56,7 @@ public class ProjectUtils
 			jsDir = "js-debug";
 		}
 		Path outputDirPath = Paths.get(outputDir, "bin", jsDir);
-		return outputDirPath.resolve(path.getFileName().toString()).toString();
+		return outputDirPath.resolve(fileName).toString();
 	}
 
 	public static String findApplicationContentOutputPath(String mainFile, String outputPath, boolean isSWF, boolean debugBuild)
@@ -69,6 +79,59 @@ public class ProjectUtils
 		}
 		Path outputDirPath = Paths.get(outputDirectory, "bin", jsDir);
 		return outputDirPath.resolve(applicationContentName).toString();
+	}
+
+	public static String findOutputPath(String mainFile, String outputValue, boolean isSWF)
+	{
+		if(outputValue == null)
+		{
+			if(mainFile == null)
+			{
+				return Paths.get(System.getProperty("user.dir")).toString();
+			}
+			Path mainFilePath = Paths.get(mainFile);
+			if(!mainFilePath.isAbsolute())
+			{
+				mainFilePath = Paths.get(System.getProperty("user.dir"), mainFile);
+			}
+			Path mainFileParentPath = mainFilePath.getParent();
+			if(mainFileParentPath == null)
+			{
+				mainFileParentPath = Paths.get(System.getProperty("user.dir"));
+			}
+			if(!isSWF)
+			{
+				//Royale treats these directory structures as a special case
+				String mainFileParentPathAsString = mainFileParentPath.toString();
+				if(mainFileParentPathAsString.endsWith("/src") ||
+					mainFileParentPathAsString.endsWith("\\src"))
+				{
+					mainFileParentPath = mainFileParentPath.resolve("../");
+				}
+				else if(mainFileParentPathAsString.endsWith("/src/main/flex") ||
+					mainFileParentPathAsString.endsWith("\\src\\main\\flex") ||
+					mainFileParentPathAsString.endsWith("/src/main/royale") ||
+					mainFileParentPathAsString.endsWith("\\src\\main\\royale"))
+				{
+					mainFileParentPath = mainFileParentPath.resolve("../../../");
+				}
+				try
+				{
+					return mainFileParentPath.toFile().getCanonicalPath();
+				}
+				catch(IOException e)
+				{
+					return null;
+				}
+			}
+			return mainFileParentPath.resolve(findOutputFileName(mainFile, outputValue)).toString();
+		}
+		Path outputPath = Paths.get(outputValue);
+		if(!outputPath.isAbsolute())
+		{
+			outputPath = Paths.get(System.getProperty("user.dir"), outputValue);
+		}
+		return outputPath.toString();
 	}
 
 	public static String findOutputDirectory(String mainFile, String outputValue, boolean isSWF)
@@ -127,6 +190,29 @@ public class ProjectUtils
 		}
 		Path outputValueParentPath = outputPath.getParent();
 		return outputValueParentPath.toString();
+	}
+
+	public static String generateApplicationID(String mainFile, String outputPath)
+	{
+		if(outputPath == null && mainFile == null)
+		{
+			return null;
+		}
+		String fileName = null;
+		if(outputPath == null)
+		{
+			fileName = Paths.get(mainFile).getFileName().toString();
+		}
+		else
+		{
+			fileName = Paths.get(outputPath).getFileName().toString();
+		}
+		int extensionIndex = fileName.indexOf('.');
+		if(extensionIndex == -1)
+		{
+			return fileName;
+		}
+		return fileName.substring(0, extensionIndex);
 	}
 
 	public static String findOutputFileName(String mainFile, String outputPath)
@@ -211,9 +297,9 @@ public class ProjectUtils
 		return null;
 	}
 
-	public static List<String> findSourcePathAssets(String mainFile, List<String> sourcePaths, String outputDirectory, List<String> excludes, List<String> excludedExtensions) throws IOException
+	public static Set<String> findSourcePathAssets(String mainFile, List<String> sourcePaths, String outputDirectory, List<String> excludes, List<String> excludedExtensions) throws IOException
 	{
-		List<String> result = new ArrayList<>();
+		Set<String> result = new HashSet<>();
 		List<String> sourcePathsCopy = new ArrayList<>();
 		if(sourcePaths != null)
 		{
@@ -340,9 +426,16 @@ public class ProjectUtils
 		return new File(outputDirectory, relativePath).getAbsolutePath();
 	}
 
+	public static String populateAdobeAIRDescriptorTemplate(String descriptor, String id)
+	{
+		//these fields are required
+		descriptor = descriptor.replaceFirst("<id>.*?<\\/id>", "<id>" + id + "</id>");
+		return descriptor.replaceFirst("<filename>.*?<\\/filename>", "<filename>" + id + "</filename>");
+	}
+
 	public static String populateAdobeAIRDescriptorContent(String descriptor, String contentValue)
 	{
-		return descriptor.replaceFirst("<content>.*<\\/content>", "<content>" + contentValue + "</content>");
+		return descriptor.replaceFirst("<content>.*?<\\/content>", "<content>" + contentValue + "</content>");
 	}
 
 	public static String populateHTMLTemplateFile(String contents, Map<String,String> templateOptions)

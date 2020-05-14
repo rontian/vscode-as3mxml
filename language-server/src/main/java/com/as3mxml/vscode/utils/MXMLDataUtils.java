@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,15 +15,22 @@ limitations under the License.
 */
 package com.as3mxml.vscode.utils;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import com.as3mxml.vscode.project.ILspProject;
+
+import org.apache.royale.compiler.common.ISourceLocation;
 import org.apache.royale.compiler.common.PrefixMap;
 import org.apache.royale.compiler.common.XMLName;
 import org.apache.royale.compiler.definitions.IClassDefinition;
 import org.apache.royale.compiler.definitions.IDefinition;
-import org.apache.royale.compiler.internal.projects.RoyaleProject;
+import org.apache.royale.compiler.internal.mxml.MXMLData;
 import org.apache.royale.compiler.mxml.IMXMLData;
 import org.apache.royale.compiler.mxml.IMXMLLanguageConstants;
 import org.apache.royale.compiler.mxml.IMXMLTagAttributeData;
 import org.apache.royale.compiler.mxml.IMXMLTagData;
+import org.apache.royale.compiler.mxml.IMXMLUnitData;
 
 public class MXMLDataUtils
 {
@@ -171,7 +178,7 @@ public class MXMLDataUtils
         return xmlName;
     }
 
-    public static IDefinition getDefinitionForMXMLTag(IMXMLTagData tag, RoyaleProject project)
+    public static IDefinition getDefinitionForMXMLTag(IMXMLTagData tag, ILspProject project)
     {
         if (tag == null)
         {
@@ -209,7 +216,7 @@ public class MXMLDataUtils
         return project.resolveSpecifier(classDefinition, tag.getShortName());
     }
 
-    public static IDefinition getTypeDefinitionForMXMLTag(IMXMLTagData tag, RoyaleProject project)
+    public static IDefinition getTypeDefinitionForMXMLTag(IMXMLTagData tag, ILspProject project)
     {
         IDefinition result = getDefinitionForMXMLTag(tag, project);
         if(result == null)
@@ -219,7 +226,7 @@ public class MXMLDataUtils
         return result.resolveType(project);
     }
 
-    public static IDefinition getDefinitionForMXMLTagAttribute(IMXMLTagData tag, int offset, boolean includeValue, RoyaleProject project)
+    public static IDefinition getDefinitionForMXMLTagAttribute(IMXMLTagData tag, int offset, boolean includeValue, ILspProject project)
     {
         IMXMLTagAttributeData attributeData = null;
         if (includeValue)
@@ -244,7 +251,7 @@ public class MXMLDataUtils
         return null;
     }
 
-    public static IDefinition getTypeDefinitionForMXMLTagAttribute(IMXMLTagData tag, int offset, boolean includeValue, RoyaleProject project)
+    public static IDefinition getTypeDefinitionForMXMLTagAttribute(IMXMLTagData tag, int offset, boolean includeValue, ILspProject project)
     {
         IDefinition result = getDefinitionForMXMLTagAttribute(tag, offset, includeValue, project);
         if(result == null)
@@ -254,7 +261,7 @@ public class MXMLDataUtils
         return result.resolveType(project);
     }
 
-    public static IDefinition getDefinitionForMXMLNameAtOffset(IMXMLTagData tag, int offset, RoyaleProject project)
+    public static IDefinition getDefinitionForMXMLNameAtOffset(IMXMLTagData tag, int offset, ILspProject project)
     {
         if (tag.isOffsetInAttributeList(offset))
         {
@@ -263,7 +270,7 @@ public class MXMLDataUtils
         return getDefinitionForMXMLTag(tag, project);
     }
 
-    public static IDefinition getTypeDefinitionForMXMLNameAtOffset(IMXMLTagData tag, int offset, RoyaleProject project)
+    public static IDefinition getTypeDefinitionForMXMLNameAtOffset(IMXMLTagData tag, int offset, ILspProject project)
     {
         IDefinition result = getDefinitionForMXMLNameAtOffset(tag, offset, project);
         if(result == null)
@@ -273,12 +280,12 @@ public class MXMLDataUtils
         return result.resolveType(project);
     }
 
-    public static boolean isMXMLTagValidForCompletion(IMXMLTagData tag)
+    public static boolean isMXMLCodeIntelligenceAvailableForTag(IMXMLTagData tag)
     {
         if (tag.getXMLName().equals(tag.getMXMLDialect().resolveScript()))
         {
-            //inside an <fx:Script> tag
-            return false;
+            //not available inside an <fx:Script> tag that isn't self-closing
+            return tag.isEmptyTag();
         }
         return true;
     }
@@ -315,5 +322,84 @@ public class MXMLDataUtils
             child = child.getNextSibling(true);
         }
         return null;
+    }
+
+    public static IMXMLTagData[] findMXMLScriptTags(IMXMLTagData tagData)
+    {
+        //go to the root tag
+        while(tagData.getParentTag() != null)
+        {
+            tagData = tagData.getParentTag();
+        }
+        ArrayList<IMXMLTagData> result = new ArrayList<>();
+        findMXMLScriptTagsInternal(tagData, result);
+        return result.toArray(new IMXMLTagData[result.size()]);
+    }
+
+    private static void findMXMLScriptTagsInternal(IMXMLTagData tagData, List<IMXMLTagData> result)
+    {
+        if (tagData.getXMLName().equals(tagData.getMXMLDialect().resolveScript()))
+        {
+            result.add(tagData);
+        }
+        IMXMLTagData child = tagData.getFirstChild(true);
+        while(child != null)
+        {
+            findMXMLScriptTagsInternal(child, result);
+            child = child.getNextSibling(true);
+        }
+    }
+
+    public static IMXMLTagData getOffsetMXMLTag(MXMLData mxmlData, int currentOffset)
+    {
+        if (mxmlData == null)
+        {
+            return null;
+        }
+        IMXMLUnitData unitData = mxmlData.findContainmentReferenceUnit(currentOffset);
+        IMXMLUnitData currentUnitData = unitData;
+        while (currentUnitData != null)
+        {
+            if (currentUnitData instanceof IMXMLTagData)
+            {
+                IMXMLTagData tagData = (IMXMLTagData) currentUnitData;
+                return tagData;
+            }
+            currentUnitData = currentUnitData.getParentUnitData();
+        }
+        return null;
+    }
+
+    public static void findMXMLUnits(IMXMLTagData tagData, IDefinition definition, ILspProject project, List<ISourceLocation> result)
+    {
+        IDefinition tagDefinition = project.resolveXMLNameToDefinition(tagData.getXMLName(), tagData.getMXMLDialect());
+        if (tagDefinition != null && definition == tagDefinition)
+        {
+            result.add(tagData);
+        }
+        if (tagDefinition instanceof IClassDefinition)
+        {
+            IClassDefinition classDefinition = (IClassDefinition) tagDefinition;
+            IMXMLTagAttributeData[] attributes = tagData.getAttributeDatas();
+            for (IMXMLTagAttributeData attributeData : attributes)
+            {
+                IDefinition attributeDefinition = project.resolveSpecifier(classDefinition, attributeData.getShortName());
+                if (attributeDefinition != null && definition == attributeDefinition)
+                {
+                    result.add(attributeData);
+                }
+            }
+        }
+        IMXMLTagData childTag = tagData.getFirstChild(true);
+        while (childTag != null)
+        {
+            if (childTag.isCloseTag())
+            {
+                //only open tags matter
+                continue;
+            }
+            findMXMLUnits(childTag, definition, project, result);
+            childTag = childTag.getNextSibling(true);
+        }
     }
 }

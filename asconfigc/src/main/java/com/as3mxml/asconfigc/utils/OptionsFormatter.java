@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -81,6 +81,23 @@ public class OptionsFormatter
 		{
 			String currentPath = paths.get(i);
 			result.add("--" + optionName + "+=" + currentPath);
+		}
+	}
+
+	public static void setThenAppendPaths(String optionName, List<String> paths, List<String> result)
+	{
+		int pathsCount = paths.size();
+		for(int i = 0; i < pathsCount; i++)
+		{
+			String currentPath = paths.get(i);
+			if(i == 0)
+			{
+				result.add("--" + optionName + "=" + currentPath);
+			}
+			else
+			{
+				result.add("--" + optionName + "+=" + currentPath);
+			}
 		}
 	}
 }

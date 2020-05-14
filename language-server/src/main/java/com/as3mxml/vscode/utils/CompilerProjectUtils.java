@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,12 +20,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import com.as3mxml.asconfigc.compiler.ProjectType;
+import com.as3mxml.asconfigc.utils.OptionsUtils;
+import com.as3mxml.vscode.project.ILspProject;
+import com.as3mxml.vscode.project.LspJSProject;
+import com.as3mxml.vscode.project.LspProject;
 import com.as3mxml.vscode.project.ProjectOptions;
 import com.as3mxml.vscode.project.VSCodeConfiguration;
 
@@ -38,12 +39,10 @@ import org.apache.royale.compiler.internal.driver.js.node.NodeBackend;
 import org.apache.royale.compiler.internal.driver.js.node.NodeModuleBackend;
 import org.apache.royale.compiler.internal.driver.js.royale.RoyaleBackend;
 import org.apache.royale.compiler.internal.projects.RoyaleJSProject;
-import org.apache.royale.compiler.internal.projects.RoyaleProject;
 import org.apache.royale.compiler.internal.projects.RoyaleProjectConfigurator;
 import org.apache.royale.compiler.internal.workspaces.Workspace;
-import org.apache.royale.compiler.problems.ICompilerProblem;
-import org.apache.royale.compiler.targets.ITarget;
-import org.apache.royale.compiler.targets.ITargetSettings;
+import org.apache.royale.compiler.projects.ICompilerProject;
+import org.apache.royale.compiler.units.ICompilationUnit;
 
 public class CompilerProjectUtils
 {
@@ -57,9 +56,7 @@ public class CompilerProjectUtils
 	
     private static final String PROPERTY_FRAMEWORK_LIB = "royalelib";
 
-	private static final Pattern ADDITIONAL_OPTIONS_PATTERN = Pattern.compile("[^\\s]*'([^'])*?'|[^\\s]*\"([^\"])*?\"|[^\\s]+");
-
-	public static RoyaleProject createProject(ProjectOptions currentProjectOptions, Workspace compilerWorkspace)
+	public static ILspProject createProject(ProjectOptions currentProjectOptions, Workspace compilerWorkspace)
 	{
         Path frameworkLibPath = Paths.get(System.getProperty(PROPERTY_FRAMEWORK_LIB));
         boolean frameworkSDKIsRoyale = ActionScriptSDKUtils.isRoyaleFramework(frameworkLibPath);
@@ -67,7 +64,7 @@ public class CompilerProjectUtils
         Path asjscPath = frameworkLibPath.resolve("../js/bin/asjsc");
         boolean frameworkSDKIsFlexJS = !frameworkSDKIsRoyale && asjscPath.toFile().exists();
 
-		RoyaleProject project = null;
+		ILspProject project = null;
 
         //we're going to try to determine what kind of project we need
         //(either Royale or everything else). if it's a Royale project, we
@@ -146,7 +143,7 @@ public class CompilerProjectUtils
         //if we created a backend, it's a Royale project (RoyaleJSProject)
         if (backend != null)
         {
-            project = new RoyaleJSProject(compilerWorkspace, backend);
+            project = new LspJSProject(compilerWorkspace, backend);
         }
         //if we haven't created the project yet, then it's not Royale and
         //the project should be one that doesn't require a backend.
@@ -155,13 +152,13 @@ public class CompilerProjectUtils
             //yes, this is called RoyaleProject, but a *real* Royale project
             //is RoyaleJSProject...
             //RoyaleProject is for projects targeting the SWF format.
-            project = new RoyaleProject(compilerWorkspace);
+            project = new LspProject(compilerWorkspace);
         }
         project.setProblems(new ArrayList<>());
         return project;
     }
 
-    public static RoyaleProjectConfigurator configureProject(RoyaleProject project, ProjectOptions currentProjectOptions, Collection<ICompilerProblem> problems)
+    public static RoyaleProjectConfigurator createConfigurator(ILspProject project, ProjectOptions projectOptions)
     {
         final Path frameworkLibPath = Paths.get(System.getProperty(PROPERTY_FRAMEWORK_LIB));
         final boolean frameworkSDKIsRoyale = ActionScriptSDKUtils.isRoyaleFramework(frameworkLibPath);
@@ -170,7 +167,7 @@ public class CompilerProjectUtils
         Path sparkPath = frameworkLibPath.resolve("./themes/Spark/spark.css");
         boolean frameworkSDKContainsSparkTheme = sparkPath.toFile().exists();
 
-		List<String> compilerOptions = currentProjectOptions.compilerOptions;
+		List<String> compilerOptions = projectOptions.compilerOptions;
         RoyaleProjectConfigurator configurator = null;
         if (project instanceof RoyaleJSProject || frameworkSDKIsRoyale)
         {
@@ -188,10 +185,10 @@ public class CompilerProjectUtils
         {
             configurator.setToken(TOKEN_FLEXLIB, System.getProperty(PROPERTY_FRAMEWORK_LIB));
         }
-        configurator.setToken(TOKEN_CONFIGNAME, currentProjectOptions.config);
-        String projectType = currentProjectOptions.type;
-        String[] files = currentProjectOptions.files;
-        String additionalOptions = currentProjectOptions.additionalOptions;
+        configurator.setToken(TOKEN_CONFIGNAME, projectOptions.config);
+        String projectType = projectOptions.type;
+        String[] files = projectOptions.files;
+        String additionalOptions = projectOptions.additionalOptions;
         ArrayList<String> combinedOptions = new ArrayList<>();
         if (compilerOptions != null)
         {
@@ -201,12 +198,7 @@ public class CompilerProjectUtils
         {
             //split the additionalOptions into separate values so that we can
             //pass them in as String[], as the compiler expects.
-            Matcher matcher = ADDITIONAL_OPTIONS_PATTERN.matcher(additionalOptions);
-            while (matcher.find())
-            {
-                String option = matcher.group();
-                combinedOptions.add(option);
-            }
+            combinedOptions.addAll(OptionsUtils.parseAdditionalOptions(additionalOptions));
         }
 
         //Github #245: avoid errors from -inline
@@ -231,7 +223,11 @@ public class CompilerProjectUtils
         }
         else // app
         {
-            combinedOptions.addAll(Arrays.asList(files));
+            combinedOptions.add("--");
+            if (files != null && files.length > 0)
+            {
+                combinedOptions.addAll(Arrays.asList(files));
+            }
             configurator.setConfiguration(combinedOptions.toArray(new String[combinedOptions.size()]),
                     ICompilerSettingsConstants.FILE_SPECS_VAR);
         }
@@ -246,6 +242,7 @@ public class CompilerProjectUtils
         }
         else
         {
+            //fallback for backwards compatibility
             appendConfigPath = frameworkLibPath.resolve("../ide/vscode-nextgenas/vscode-nextgenas-config.xml");
             appendConfigFile = appendConfigPath.toFile();
             if (appendConfigFile.exists())
@@ -253,24 +250,30 @@ public class CompilerProjectUtils
                 configurator.addConfiguration(appendConfigFile);
             }
         }
-		boolean result = configurator.applyToProject(project);
-		problems.addAll(configurator.getConfigurationProblems());
-        if (!result)
-        {
-            return null;
-        }
-        ITarget.TargetType targetType = ITarget.TargetType.SWF;
-        if (currentProjectOptions.type.equals(ProjectType.LIB))
-        {
-            targetType = ITarget.TargetType.SWC;
-        }
-        ITargetSettings targetSettings = configurator.getTargetSettings(targetType);
-        if (targetSettings == null)
-        {
-            System.err.println("Failed to get compile settings for +configname=" + currentProjectOptions.config + ".");
-            return null;
-        }
-        project.setTargetSettings(targetSettings);
         return configurator;
 	}
+
+    public static ICompilationUnit findCompilationUnit(Path pathToFind, ICompilerProject project)
+    {
+        if(project == null)
+        {
+            return null;
+        }
+        for (ICompilationUnit unit : project.getCompilationUnits())
+        {
+            //it's possible for the collection of compilation units to contain
+            //null values, so be sure to check for null values before checking
+            //the file name
+            if (unit == null)
+            {
+                continue;
+            }
+            Path unitPath = Paths.get(unit.getAbsoluteFilename());
+            if(unitPath.equals(pathToFind))
+            {
+                return unit;
+            }
+        }
+        return null;
+    }
 }

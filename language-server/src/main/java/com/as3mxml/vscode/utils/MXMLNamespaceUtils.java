@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -87,14 +87,24 @@ public class MXMLNamespaceUtils
     private static final String DOT_STAR = ".*";
     private static final String UNDERSCORE_UNDERSCORE_AS3_PACKAGE = "__AS3__.";
 
+	public static MXMLNamespace getMXMLLanguageNamespace(IMXMLTagData tagData)
+    {
+        PrefixMap prefixMap = tagData.getCompositePrefixMap();
+        String fxURI = tagData.getMXMLDialect().getLanguageNamespace();
+        MXMLNamespace fxNS = getNamespaceFromURI(fxURI, prefixMap);
+        return fxNS;
+    }
+
 	public static MXMLNamespace getMXMLLanguageNamespace(IFileSpecification fileSpec, IWorkspace workspace)
     {
         IMXMLDataManager mxmlDataManager = workspace.getMXMLDataManager();
         MXMLData mxmlData = (MXMLData) mxmlDataManager.get(fileSpec);
-        PrefixMap prefixMap = mxmlData.getRootTagPrefixMap();
-        String fxURI = mxmlData.getRootTag().getMXMLDialect().getLanguageNamespace();
-        MXMLNamespace fxNS = getNamespaceFromURI(fxURI, prefixMap);
-        return fxNS;
+        IMXMLTagData rootTag = mxmlData.getRootTag();
+        if (rootTag == null)
+        {
+            return null;
+        }
+        return getMXMLLanguageNamespace(rootTag);
     }
 
     public static MXMLNamespace getNamespaceFromURI(String uri, PrefixMap prefixMap)
@@ -173,22 +183,26 @@ public class MXMLNamespaceUtils
         }
         if (tagNamespace.equals(IMXMLLanguageConstants.NAMESPACE_MXML_2006))
         {
-            String rootLanguageNamespace = mxmlData.getRootTag().getMXMLDialect().getLanguageNamespace();
-            if(!rootLanguageNamespace.equals(tagNamespace))
+            IMXMLTagData rootTag = mxmlData.getRootTag();
+            if (rootTag != null)
             {
-                if(tagNamespaces.contains(IMXMLLibraryConstants.MX))
+                String rootLanguageNamespace = rootTag.getMXMLDialect().getLanguageNamespace();
+                if(!rootLanguageNamespace.equals(tagNamespace))
                 {
-                    //if we find the mxml 2006 language namepace, but
-                    //we're using a newer language namespace, and the mx
-                    //library also exists, we prefer the library
-                    return false;
-                }
-                if(tagNamespaces.contains(rootLanguageNamespace))
-                {
-                    //getTagNamesForClass() may sometimes return the
-                    //mxml 2006 namespace, even if that's not what we're
-                    //using in this file.
-                    return false;
+                    if(tagNamespaces.contains(IMXMLLibraryConstants.MX))
+                    {
+                        //if we find the mxml 2006 language namepace, but
+                        //we're using a newer language namespace, and the mx
+                        //library also exists, we prefer the library
+                        return false;
+                    }
+                    if(tagNamespaces.contains(rootLanguageNamespace))
+                    {
+                        //getTagNamesForClass() may sometimes return the
+                        //mxml 2006 namespace, even if that's not what we're
+                        //using in this file.
+                        return false;
+                    }
                 }
             }
         }

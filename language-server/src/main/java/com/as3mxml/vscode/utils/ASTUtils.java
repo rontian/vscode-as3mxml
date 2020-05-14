@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,28 +22,44 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import com.as3mxml.vscode.compiler.problems.DisabledConfigConditionBlockProblem;
+import com.as3mxml.vscode.compiler.problems.UnusedImportProblem;
+
+import org.apache.royale.compiler.constants.IASLanguageConstants;
+import org.apache.royale.compiler.constants.IMetaAttributeConstants;
 import org.apache.royale.compiler.definitions.IClassDefinition;
+import org.apache.royale.compiler.definitions.IConstantDefinition;
 import org.apache.royale.compiler.definitions.IDefinition;
 import org.apache.royale.compiler.definitions.IFunctionDefinition;
 import org.apache.royale.compiler.definitions.IGetterDefinition;
 import org.apache.royale.compiler.definitions.ISetterDefinition;
 import org.apache.royale.compiler.definitions.ITypeDefinition;
+import org.apache.royale.compiler.definitions.metadata.IMetaTag;
+import org.apache.royale.compiler.internal.tree.as.ConfigConditionBlockNode;
+import org.apache.royale.compiler.internal.tree.as.FileNode;
+import org.apache.royale.compiler.problems.ICompilerProblem;
 import org.apache.royale.compiler.projects.ICompilerProject;
 import org.apache.royale.compiler.tree.ASTNodeID;
 import org.apache.royale.compiler.tree.as.IASNode;
 import org.apache.royale.compiler.tree.as.IBinaryOperatorNode;
 import org.apache.royale.compiler.tree.as.IBlockNode;
 import org.apache.royale.compiler.tree.as.IClassNode;
+import org.apache.royale.compiler.tree.as.IExpressionNode;
+import org.apache.royale.compiler.tree.as.IFileNode;
 import org.apache.royale.compiler.tree.as.IFunctionCallNode;
 import org.apache.royale.compiler.tree.as.IFunctionNode;
 import org.apache.royale.compiler.tree.as.IIdentifierNode;
 import org.apache.royale.compiler.tree.as.IImportNode;
 import org.apache.royale.compiler.tree.as.IInterfaceNode;
+import org.apache.royale.compiler.tree.as.ILiteralContainerNode;
+import org.apache.royale.compiler.tree.as.ILiteralNode;
+import org.apache.royale.compiler.tree.as.IMemberAccessExpressionNode;
 import org.apache.royale.compiler.tree.as.IPackageNode;
+import org.apache.royale.compiler.tree.as.IScopedDefinitionNode;
 import org.apache.royale.compiler.tree.as.IScopedNode;
 import org.apache.royale.compiler.tree.as.ITransparentContainerNode;
 import org.apache.royale.compiler.tree.as.IVariableNode;
-import org.apache.royale.compiler.tree.mxml.IMXMLScriptNode;
+import org.apache.royale.compiler.tree.mxml.IMXMLSpecifierNode;
 import org.apache.royale.compiler.units.ICompilationUnit;
 
 public class ASTUtils
@@ -51,12 +67,54 @@ public class ASTUtils
     private static final String DOT_STAR = ".*";
     private static final String UNDERSCORE_UNDERSCORE_AS3_PACKAGE = "__AS3__.";
 
+    public static IASNode getCompilationUnitAST(ICompilationUnit unit)
+    {
+        IASNode ast = null;
+        try
+        {
+            ast = unit.getSyntaxTreeRequest().get().getAST();
+        }
+        catch (InterruptedException e)
+        {
+            System.err.println("Interrupted while getting AST: " + unit.getAbsoluteFilename());
+            return null;
+        }
+        if (ast == null)
+        {
+            //we couldn't find the root node for this file
+            System.err.println("Could not find AST: " + unit.getAbsoluteFilename());
+            return null;
+        }
+        if (ast instanceof FileNode)
+        {
+            FileNode fileNode = (FileNode) ast;
+            //seems to work better than populateFunctionNodes() alone
+            fileNode.parseRequiredFunctionBodies();
+        }
+        if (ast instanceof IFileNode)
+        {
+            try
+            {
+                IFileNode fileNode = (IFileNode) ast;
+                //call this in addition to parseRequiredFunctionBodies() because
+                //functions in included files won't be populated without it
+                fileNode.populateFunctionNodes();
+            }
+            catch(NullPointerException e)
+            {
+                //sometimes, a null pointer exception can be thrown inside
+                //FunctionNode.parseFunctionBody(). seems like a Royale bug.
+            }
+        }
+        return ast;
+    }
+
     public static boolean containsWithStart(IASNode node, int offset)
     {
         return offset >= node.getAbsoluteStart() && offset <= node.getAbsoluteEnd();
     }
 
-    public static IASNode findDescendantOfType(IASNode node, Class<? extends IASNode> classToFind)
+    public static IASNode findFirstDescendantOfType(IASNode node, Class<? extends IASNode> classToFind)
     {
         for (int i = 0; i < node.getChildCount(); i++)
         {
@@ -65,13 +123,34 @@ public class ASTUtils
             {
                 return child;
             }
-            IASNode result = findDescendantOfType(child, classToFind);
+            if (child.isTerminal())
+            {
+                continue;
+            }
+            IASNode result = findFirstDescendantOfType(child, classToFind);
             if(result != null)
             {
                 return result;
             }
         }
         return null;
+    }
+
+    public static void findAllDescendantsOfType(IASNode node, Class<? extends IASNode> classToFind, List<IASNode> result)
+    {
+        for (int i = 0; i < node.getChildCount(); i++)
+        {
+            IASNode child = node.getChild(i);
+            if (classToFind.isInstance(child))
+            {
+                result.add(child);
+            }
+            if (child.isTerminal())
+            {
+                continue;
+            }
+            findAllDescendantsOfType(child, classToFind, result);
+        }
     }
 
     public static IASNode getContainingNodeIncludingStart(IASNode node, int offset)
@@ -83,6 +162,22 @@ public class ASTUtils
         for (int i = 0, count = node.getChildCount(); i < count; i++)
         {
             IASNode child = node.getChild(i);
+            if(child.getAbsoluteStart() == -1)
+            {
+                //the Royale compiler has a quirk where a node can have an
+                //unknown offset, but its children have known offsets. this is
+                //where we work around that...
+                for (int j = 0, innerCount = child.getChildCount(); j < innerCount; j++)
+                {
+                    IASNode innerChild = child.getChild(j);
+                    IASNode result = getContainingNodeIncludingStart(innerChild, offset);
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                }
+                continue;
+            }
             IASNode result = getContainingNodeIncludingStart(child, offset);
             if (result != null)
             {
@@ -145,12 +240,31 @@ public class ASTUtils
         return importsToAdd;
 	}
 	
-    public static Set<IImportNode> findImportNodesToRemove(IASNode node, ICompilerProject project)
+    public static List<IImportNode> findImportNodesToRemove(IASNode node, Set<String> requiredImports)
     {
-        HashSet<IImportNode> importsToRemove = new HashSet<>();
-        findImportNodesToRemove(node, project, new HashSet<>(), importsToRemove);
+        List<IImportNode> importsToRemove = new ArrayList<>();
+        findImportNodesToRemove(node, requiredImports, importsToRemove);
         return importsToRemove;
-	}
+    }
+    
+    public static void findUnusedImportProblems(IASNode ast, Set<String> requiredImports, List<ICompilerProblem> problems)
+    {
+        List<IImportNode> importsToRemove = findImportNodesToRemove(ast, requiredImports);
+        for(IImportNode importNode : importsToRemove)
+        {
+            problems.add(new UnusedImportProblem(importNode));
+        }
+    }
+    
+    public static void findDisabledConfigConditionBlockProblems(IASNode ast, List<ICompilerProblem> problems)
+    {
+        List<ConfigConditionBlockNode> blocks = new ArrayList<>();
+        findDisabledConfigConditionBlocks(ast, blocks);
+        for(ConfigConditionBlockNode block : blocks)
+        {
+            problems.add(new DisabledConfigConditionBlockProblem(block));
+        }
+    }
 	
 	public static List<IDefinition> findTypesThatMatchName(String nameToFind, Collection<ICompilationUnit> compilationUnits)
 	{
@@ -192,6 +306,118 @@ public class ASTUtils
             }
 		}
 		return result;
+    }
+
+    public static boolean isFunctionCallWithName(IFunctionCallNode functionCallNode, String functionName)
+    {
+        IExpressionNode nameNode = functionCallNode.getNameNode();
+        if (nameNode instanceof IIdentifierNode)
+        {
+            IIdentifierNode nameIdentifierNode = (IIdentifierNode) nameNode;
+            if(nameIdentifierNode.getName().equals(functionName))
+            {
+                return true;
+            }
+        }
+        else if (nameNode instanceof IMemberAccessExpressionNode)
+        {
+            IMemberAccessExpressionNode nameMemberAccess = (IMemberAccessExpressionNode) nameNode;
+            IExpressionNode rightOperandNode = nameMemberAccess.getRightOperandNode();
+            if(rightOperandNode instanceof IIdentifierNode)
+            {
+                IIdentifierNode rightIdentifierNode = (IIdentifierNode) rightOperandNode;
+                if(rightIdentifierNode.getName().equals(functionName))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public static String findEventClassNameFromAddEventListenerFunctionCall(IFunctionCallNode functionCallNode, ICompilerProject project)
+    {
+        String eventType = null;
+        IExpressionNode[] args = functionCallNode.getArgumentNodes();
+        if(args.length < 1)
+        {
+            return null;
+        }
+        IExpressionNode eventTypeExpression = args[0];
+        if(eventTypeExpression.getNodeID().equals(ASTNodeID.LiteralStringID))
+        {
+            ILiteralNode literalNode = (ILiteralNode) eventTypeExpression;
+            eventType = literalNode.getValue();
+        }
+        else
+        {
+            IDefinition resolvedDefinition = eventTypeExpression.resolve(project);
+            if (resolvedDefinition instanceof IConstantDefinition)
+            {
+                IConstantDefinition constantDefinition = (IConstantDefinition) resolvedDefinition;
+                Object initialValue = constantDefinition.resolveInitialValue(project);
+                if(initialValue instanceof String)
+                {
+                    eventType = (String) initialValue;
+                }
+            }
+        }
+
+        if(eventType == null)
+        {
+            return null;
+        }
+
+        ITypeDefinition typeDefinition = null;
+        IExpressionNode nameNode = functionCallNode.getNameNode();
+        if(nameNode instanceof IIdentifierNode)
+        {
+            typeDefinition = ScopeUtils.getContainingTypeDefinitionForScope(functionCallNode.getContainingScope());
+        }
+        else if(nameNode instanceof IMemberAccessExpressionNode)
+        {
+            IMemberAccessExpressionNode memberAccessExpressionNode = (IMemberAccessExpressionNode) nameNode;
+            IExpressionNode leftExpressionNode = memberAccessExpressionNode.getLeftOperandNode();
+            typeDefinition = leftExpressionNode.resolveType(project);
+        }
+        if(typeDefinition == null)
+        {
+            return null;
+        }
+
+        String eventClassName = findEventClassFromTypeDefinitionMetadata(eventType, typeDefinition, project);
+        if(eventClassName == null)
+        {
+            //lets use Object as the fallback if [Event] metadata is missing
+            //we can't assume a specific class, like flash.events.Event
+            //because Apache Royale or Starling objects might dispatch other
+            //types of events.
+            return IASLanguageConstants.Object;
+        }
+        return eventClassName;
+    }
+
+    public static String findEventClassFromTypeDefinitionMetadata(String eventName, ITypeDefinition typeDefinition, ICompilerProject project)
+    {
+        for(ITypeDefinition currentDefinition : typeDefinition.typeIteratable(project, false))
+        {
+            IMetaTag[] eventMetaTags = currentDefinition.getMetaTagsByName(IMetaAttributeConstants.ATTRIBUTE_EVENT);
+            for(IMetaTag metaTag : eventMetaTags)
+            {
+                String metaEventName = metaTag.getAttributeValue(IMetaAttributeConstants.NAME_EVENT_NAME);
+                if(!eventName.equals(metaEventName))
+                {
+                    continue;
+                }
+                String eventClassName = metaTag.getAttributeValue(IMetaAttributeConstants.NAME_EVENT_TYPE);
+                if(eventClassName != null)
+                {
+                    return eventClassName;
+                }
+                break;
+            }
+        }
+        return null;
     }
     
     public static void findIdentifiersForDefinition(IASNode node, IDefinition definition, ICompilerProject project, List<IIdentifierNode> result)
@@ -253,7 +479,10 @@ public class ASTUtils
                     }
                 }
             }
-            return;
+            if (!(node instanceof ILiteralContainerNode))
+            {
+                return;
+            }
         }
         for (int i = 0, count = node.getChildCount(); i < count; i++)
         {
@@ -355,79 +584,37 @@ public class ASTUtils
         }
 	}
     
-    protected static void findImportNodesToRemove(IASNode node, ICompilerProject project, Set<String> referencedDefinitions, Set<IImportNode> importsToRemove)
+    protected static void findImportNodesToRemove(IASNode node, Set<String> requiredImports, List<IImportNode> importsToRemove)
     {
-        Set<String> mxmlScriptReferencedDefinitions = null;
-        Set<IImportNode> childImports = null;
-        if (node instanceof IScopedNode || node instanceof IMXMLScriptNode)
-        {
-            childImports = new HashSet<>();
-        }
         for (int i = 0, count = node.getChildCount(); i < count; i++)
         {
             IASNode child = node.getChild(i);
             if (child instanceof IImportNode)
             {
-                if (childImports != null)
-                {
-                    IImportNode importNode = (IImportNode) child;
-                    childImports.add(importNode);
-                }
-                //import nodes can't be references
-                continue;
-            }
-            if (child instanceof IIdentifierNode)
-            {
-                IIdentifierNode identifierNode = (IIdentifierNode) child;
-                IDefinition definition = identifierNode.resolve(project);
-                if (definition != null
-                        && definition.getPackageName().length() > 0
-                        && definition.getQualifiedName().startsWith(definition.getPackageName()))
-                {
-                    referencedDefinitions.add(definition.getQualifiedName());
-                }
-            }
-            findImportNodesToRemove(child, project, referencedDefinitions, importsToRemove);
-        }
-        if (node instanceof IMXMLScriptNode)
-        {
-            IMXMLScriptNode scriptNode = (IMXMLScriptNode) node;
-            mxmlScriptReferencedDefinitions = new HashSet<>();
-            findReferencedDefinitionsOutsideMXMLScript(scriptNode.getParent(), project, mxmlScriptReferencedDefinitions);
-        }
-        final Set<String> mxmlRefs = mxmlScriptReferencedDefinitions;
-        if (childImports != null)
-        {
-            childImports.removeIf(importNode ->
-            {
-                if (importNode.getAbsoluteStart() == -1)
-                {
-                    return true;
-                }
+                IImportNode importNode = (IImportNode) child;
                 String importName = importNode.getImportName();
                 if (importName.endsWith(DOT_STAR))
                 {
                     String importPackage = importName.substring(0, importName.length() - 2);
-                    if (mxmlRefs != null)
+                    if (containsReferenceForImportPackage(importPackage, requiredImports))
                     {
-                        if (containsReferenceForImportPackage(importPackage, mxmlRefs))
-                        {
-                            return true;
-                        }
+                        //this class is referenced by a wildcard import
+                        continue;
                     }
-                    if (containsReferenceForImportPackage(importPackage, referencedDefinitions))
-                    {
-                        return true;
-                    }
-                    return false;
                 }
-                if(mxmlRefs != null && mxmlRefs.contains(importName))
+                if(!requiredImports.contains(importName))
                 {
-                    return true;
+                    importsToRemove.add(importNode);
                 }
-                return referencedDefinitions.contains(importName);
-            });
-            importsToRemove.addAll(childImports);
+                //import nodes can't be references
+                continue;
+            }
+            if (child.isTerminal())
+            {
+                //terminal nodes don't have children, so don't bother checking
+                continue;
+            }
+            findImportNodesToRemove(child, requiredImports, importsToRemove);
         }
     }
 
@@ -436,7 +623,7 @@ public class ASTUtils
         for (String reference : referencedDefinitions)
         {
             if(reference.startsWith(importPackage)
-                && !reference.substring(importPackage.length() + 1).contains("."))
+                && reference.indexOf('.', importPackage.length() + 1) == -1)
             {
                 //an entire package is imported, so check if any
                 //references are in that package
@@ -444,37 +631,6 @@ public class ASTUtils
             }
         }
         return false;
-    }
-
-    private static void findReferencedDefinitionsOutsideMXMLScript(IASNode node, ICompilerProject project, Set<String> referencedDefinitions)
-    {
-        for (int i = 0, count = node.getChildCount(); i < count; i++)
-        {
-            IASNode child = node.getChild(i);
-            if (child instanceof IMXMLScriptNode)
-            {
-                //skip the script node and children because they are handled in
-                //findImportNodesToRemove()
-                continue;
-            }
-            if (child instanceof IImportNode)
-            {
-                //import nodes can't be references
-                continue;
-            }
-            if (child instanceof IIdentifierNode)
-            {
-                IIdentifierNode identifierNode = (IIdentifierNode) child;
-                IDefinition definition = identifierNode.resolve(project);
-                if (definition != null
-                        && definition.getPackageName().length() > 0
-                        && definition.getQualifiedName().startsWith(definition.getPackageName()))
-                {
-                    referencedDefinitions.add(definition.getQualifiedName());
-                }
-            }
-            findReferencedDefinitionsOutsideMXMLScript(child, project, referencedDefinitions);
-        }
     }
 
     public static String getIndentBeforeNode(IASNode node, String fileText)
@@ -487,7 +643,11 @@ public class ASTUtils
         int indentStart = offset - column;
         if (indentStart != -1 && column != -1)
         {
-            return fileText.substring(indentStart, indentStart + column);
+            int indentEnd = indentStart + column;
+            if (indentEnd < fileText.length())
+            {
+                return fileText.substring(indentStart, indentEnd);
+            }
         }
         return "";
     }
@@ -502,5 +662,221 @@ public class ASTUtils
             currentNode = currentNode.getParent();
         }
         return containingPackageName;
+    }
+
+    public static int getFunctionCallNodeArgumentIndex(IFunctionCallNode functionCallNode, IASNode offsetNode)
+    {
+        if (offsetNode == functionCallNode.getArgumentsNode()
+                && offsetNode.getChildCount() == 0)
+        {
+            //there are no arguments yet
+            return 0;
+        }
+        int indexToFind = offsetNode.getAbsoluteEnd();
+        IExpressionNode[] argumentNodes = functionCallNode.getArgumentNodes();
+        for (int i = argumentNodes.length - 1; i >= 0; i--)
+        {
+            IExpressionNode argumentNode = argumentNodes[i];
+            if (indexToFind >= argumentNode.getAbsoluteStart())
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    public static IFunctionCallNode getAncestorFunctionCallNode(IASNode offsetNode)
+    {
+        IASNode currentNode = offsetNode;
+        do
+        {
+            if (currentNode instanceof IFunctionCallNode)
+            {
+                return (IFunctionCallNode) currentNode;
+            }
+            if (currentNode instanceof IScopedDefinitionNode)
+            {
+                return null;
+            }
+            currentNode = currentNode.getParent();
+        }
+        while (currentNode != null);
+        return null;
+    }
+
+    public static String memberAccessToPackageName(IMemberAccessExpressionNode memberAccess)
+    {
+        String result = null;
+        IExpressionNode rightOperand = memberAccess.getRightOperandNode();
+        if(!(rightOperand instanceof IIdentifierNode))
+        {
+            return null;
+        }
+        IExpressionNode leftOperand = memberAccess.getLeftOperandNode();
+        if (leftOperand instanceof IMemberAccessExpressionNode)
+        {
+            result = memberAccessToPackageName((IMemberAccessExpressionNode) leftOperand);
+        }
+        else if(leftOperand instanceof IIdentifierNode)
+        {
+            IIdentifierNode identifierNode = (IIdentifierNode) leftOperand;
+            result = identifierNode.getName();
+        }
+        else
+        {
+            return null;
+        }
+        IIdentifierNode identifierNode = (IIdentifierNode) rightOperand;
+        return result + "." + identifierNode.getName();
+    }
+
+    private static boolean isInActionScriptComment(IASNode offsetNode, String code, int currentOffset, int minCommentStartIndex)
+    {
+        if (offsetNode != null && offsetNode.isTerminal())
+        {
+            return false;
+        }
+        int startComment = code.lastIndexOf("/*", currentOffset - 1);
+        if(startComment < minCommentStartIndex)
+        {
+            startComment = -1;
+        }
+        if (startComment != -1)
+        {
+            if(startComment > offsetNode.getAbsoluteStart())
+            {
+                IASNode commentNode = getContainingNodeIncludingStart(offsetNode, startComment + 1);
+                if(offsetNode.equals(commentNode) && !isInSingleLineComment(code, startComment, minCommentStartIndex))
+                {
+                    int endComment = code.indexOf("*/", startComment);
+                    if(endComment == -1)
+                    {
+                        endComment = code.length();
+                    }
+                    if(endComment < offsetNode.getAbsoluteEnd())
+                    {
+                        commentNode = getContainingNodeIncludingStart(offsetNode, endComment + 1);
+                        if(offsetNode.equals(commentNode) && !isInSingleLineComment(code, endComment, minCommentStartIndex))
+                        {
+                            //start and end are both the same node as the offset
+                            //node, and neither is inside single line comments,
+                            //so we're probably inside a multiline comment
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return isInSingleLineComment(code, currentOffset, minCommentStartIndex);
+    }
+
+    private static boolean isInSingleLineComment(String code, int currentOffset, int minCommentStartIndex)
+    {
+        int startComment = -1;
+        int startLine = code.lastIndexOf('\n', currentOffset - 1);
+        if (startLine == -1)
+        {
+            //we're on the first line
+            startLine = 0;
+        }
+        //we need to stop searching after the end of the current line
+        int endLine = code.indexOf('\n', currentOffset);
+        do
+        {
+            //we need to check this in a loop because it's possible for
+            //the start of a single line comment to appear inside multiple
+            //MXML attributes on the same line
+            startComment = code.indexOf("//", startLine);
+            if(startComment != -1 && currentOffset > startComment && startComment >= minCommentStartIndex)
+            {
+                return true;
+            }
+            startLine = startComment + 2;
+        }
+        while(startComment != -1 && startLine < endLine);
+        return false;
+    }
+
+    public static boolean isInXMLComment(String code, int currentOffset)
+    {
+        int startComment = code.lastIndexOf("<!--", currentOffset - 1);
+        if (startComment == -1)
+        {
+            return false;
+        }
+        int endComment = code.indexOf("-->", startComment);
+        return endComment > currentOffset;
+    }
+
+    public static boolean isActionScriptCompletionAllowedInNode(IASNode offsetNode, String fileText, int currentOffset)
+    {
+        if (offsetNode != null)
+        {
+            if (offsetNode.getNodeID().equals(ASTNodeID.LiteralStringID))
+            {
+                return false;
+            }
+            if (offsetNode.getNodeID().equals(ASTNodeID.LiteralRegexID))
+            {
+                return false;
+            }
+        }
+        int minCommentStartIndex = 0;
+        IMXMLSpecifierNode mxmlNode = null;
+        if (offsetNode instanceof IMXMLSpecifierNode)
+        {
+            mxmlNode = (IMXMLSpecifierNode) offsetNode;
+        }
+        if (mxmlNode == null)
+        {
+            mxmlNode = (IMXMLSpecifierNode) offsetNode.getAncestorOfType(IMXMLSpecifierNode.class);
+        }
+        if (mxmlNode != null)
+        {
+            //start in the current MXML node and ignore the start of comments
+            //that appear in earlier MXML nodes
+            minCommentStartIndex = mxmlNode.getAbsoluteStart();
+        }
+        
+        return !ASTUtils.isInActionScriptComment(offsetNode, fileText, currentOffset, minCommentStartIndex);
+    }
+	
+    private static void findDisabledConfigConditionBlocks(IASNode node, List<ConfigConditionBlockNode> result)
+    {
+        for(int i = 0, count = node.getChildCount(); i < count; i++)
+        {
+            IASNode child = node.getChild(i);
+            if(child instanceof ConfigConditionBlockNode)
+            {
+                ConfigConditionBlockNode configBlock = (ConfigConditionBlockNode) child;
+                if(configBlock.getChildCount() == 0)
+                {
+                    result.add(configBlock);
+                    continue;
+                }
+            }
+            if(child.isTerminal())
+            {
+                continue;
+            }
+            findDisabledConfigConditionBlocks(child, result);
+        }
+    }
+
+    public static boolean nodeContainsNode(IASNode parent, IASNode child)
+    {
+        if(parent == null)
+        {
+            return false;
+        }
+        while(child != null)
+        {
+            child = child.getParent();
+            if(parent.equals(child))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

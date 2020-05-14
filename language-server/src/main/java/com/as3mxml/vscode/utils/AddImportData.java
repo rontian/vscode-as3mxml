@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,14 +19,16 @@ import org.eclipse.lsp4j.Position;
 
 public class AddImportData
 {
-	public AddImportData(Position position, String indent, String newLines)
+	public AddImportData(Position position, String indent, String newLines, ImportRange importRange)
 	{
 		this.position = position;
 		this.indent = indent;
 		this.newLines = newLines;
+		this.importRange = importRange;
 	}
 
 	public Position position;
 	public String indent;
 	public String newLines;
+	public ImportRange importRange;
 }

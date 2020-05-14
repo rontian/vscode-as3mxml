@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,19 +24,27 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.Field;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
+import java.nio.file.WatchEvent.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -60,6 +68,7 @@ import com.networknt.schema.ValidationMessage;
 import com.as3mxml.asconfigc.air.AIROptions;
 import com.as3mxml.asconfigc.air.AIROptionsParser;
 import com.as3mxml.asconfigc.air.AIRSigningOptions;
+import com.as3mxml.asconfigc.animate.AnimateOptions;
 import com.as3mxml.asconfigc.compiler.CompilerOptions;
 import com.as3mxml.asconfigc.compiler.CompilerOptionsParser;
 import com.as3mxml.asconfigc.compiler.ConfigName;
@@ -69,9 +78,11 @@ import com.as3mxml.asconfigc.compiler.RoyaleTarget;
 import com.as3mxml.asconfigc.htmlTemplate.HTMLTemplateOptionsParser;
 import com.as3mxml.asconfigc.utils.ApacheFlexJSUtils;
 import com.as3mxml.asconfigc.utils.ApacheRoyaleUtils;
+import com.as3mxml.asconfigc.utils.ConfigUtils;
 import com.as3mxml.asconfigc.utils.GenericSDKUtils;
 import com.as3mxml.asconfigc.utils.JsonUtils;
 import com.as3mxml.asconfigc.utils.OptionsFormatter;
+import com.as3mxml.asconfigc.utils.OptionsUtils;
 import com.as3mxml.asconfigc.utils.ProjectUtils;
 
 /**
@@ -85,6 +96,10 @@ public class ASConfigC
 	private static final String FILE_EXTENSION_MXML = ".mxml";
 	private static final String FILE_EXTENSION_ANE = ".ane";
 	private static final String FILE_NAME_UNPACKAGED_ANES = ".as3mxml-unpackaged-anes";
+	private static final String FILE_NAME_ANIMATE_PUBLISH_LOG = "AnimateDocument.log";
+	private static final String FILE_NAME_ANIMATE_ERROR_LOG = "AnimateErrors.log";
+	private static final String FILE_NAME_BIN_JS_DEBUG = "bin/js-debug";
+	private static final String FILE_NAME_BIN_JS_RELEASE = "bin/js-release";
 
 	public static void main(String[] args)
 	{
@@ -119,6 +134,26 @@ public class ASConfigC
 		cleanOption.setArgName("true OR false");
 		cleanOption.setOptionalArg(true);
 		options.addOption(cleanOption);
+		Option animateOption = new Option(null, "animate", true, "Specify the path to Adobe Animate.");
+		animateOption.setArgName("FILE");
+		animateOption.setOptionalArg(true);
+		options.addOption(animateOption);
+		Option publishOption = new Option(null, "publish-animate", true, "Publish Adobe Animate document, instead of exporting the SWF.");
+		publishOption.setArgName("true OR false");
+		publishOption.setOptionalArg(true);
+		options.addOption(publishOption);
+		Option verboseOption = new Option(null, "verbose", true, "Displays verbose output.");
+		verboseOption.setArgName("true OR false");
+		verboseOption.setOptionalArg(true);
+		options.addOption(verboseOption);
+		Option jvmargsOption = new Option(null, "jvmargs", true, "(Advanced) Pass custom arguments to the Java virtual machine.");
+		jvmargsOption.setArgName("ARGS");
+		jvmargsOption.setOptionalArg(true);
+		options.addOption(jvmargsOption);
+		Option printConfigOption = new Option(null, "print-config", true, "(Advanced) Prints the contents of the asconfig.json file used to build, including any extensions.");
+		printConfigOption.setArgName("true OR false");
+		printConfigOption.setOptionalArg(true);
+		options.addOption(printConfigOption);
 
 		ASConfigCOptions asconfigcOptions = null;
 		try
@@ -172,7 +207,6 @@ public class ASConfigC
 	}
 
 	private static final String ASCONFIG_JSON = "asconfig.json";
-	private static final Pattern ADDITIONAL_OPTIONS_PATTERN = Pattern.compile("\"([^\"]*)\"|(\\S+)");
 
 	public ASConfigC(ASConfigCOptions options) throws ASConfigCException
 	{
@@ -182,17 +216,29 @@ public class ASConfigC
 		//the current working directory must be where asconfig.json is located
 		System.setProperty("user.dir", configFile.getParent());
 
-		JsonNode json = loadConfig(configFile);
+		JsonNode json = loadConfigFromFile(configFile);
+		if(options.printConfig)
+		{
+			printConfig(json);
+			return;
+		}
 		parseConfig(json);
-		validateSDK();
-		cleanProject();
-		compileProject();
-		copySourcePathAssets();
-		copyHTMLTemplate();
-		processAdobeAIRDescriptor();
-		copyAIRFiles();
-		prepareNativeExtensions();
-		packageAIR();
+		if(animateFile != null)
+		{
+			compileAnimateFile();
+		}
+		else
+		{
+			validateSDK();
+			cleanProject();
+			compileProject();
+			copySourcePathAssets();
+			copyHTMLTemplate();
+			processAdobeAIRDescriptors();
+			copyAIRFiles();
+			prepareNativeExtensions();
+			packageAIR();
+		}
 	}
 
 	private ASConfigCOptions options;
@@ -207,11 +253,12 @@ public class ASConfigC
 	private String jsOutputType;
 	private String outputPath;
 	private String mainFile;
-	private String airDescriptorPath;
+	private List<String> airDescriptorPaths;
 	private List<String> sourcePaths;
 	private boolean configRequiresRoyale;
 	private boolean configRequiresRoyaleOrFlexJS;
 	private boolean configRequiresFlexJS;
+	private boolean configRequiresAIR;
 	private boolean sdkIsRoyale;
 	private boolean sdkIsFlexJS;
 	private boolean isSWFTargetOnly;
@@ -219,6 +266,8 @@ public class ASConfigC
 	private String sdkHome;
 	private String htmlTemplate;
 	private Map<String,String> htmlTemplateOptions;
+	private String animateFile;
+	private WatchService animateWatcher;
 
 	private File findConfigurationFile(String projectPath) throws ASConfigCException
 	{
@@ -247,7 +296,7 @@ public class ASConfigC
 		return projectFile;
 	}
 
-	private JsonNode loadConfig(File configFile) throws ASConfigCException
+	private JsonNode loadConfigFromFile(File configFile) throws ASConfigCException
 	{
         JsonSchema schema = null;
         try (InputStream schemaInputStream = getClass().getResourceAsStream("/schemas/asconfig.schema.json"))
@@ -259,16 +308,33 @@ public class ASConfigC
         {
             //this exception is unexpected, so it should be reported
             throw new ASConfigCException("Failed to load asconfig.json schema: " + e);
-        }
+		}
+		return loadConfigFromFileWithSchema(configFile, schema);
+	}
+
+	private JsonNode loadConfigFromFileWithSchema(File configFile, JsonSchema schema) throws ASConfigCException
+	{
         JsonNode json = null;
         try
         {
+			if(options.verbose)
+			{
+				System.out.println("Configuration file: " + configFile.getAbsolutePath());
+			}
+			if(options.verbose)
+			{
+				System.out.println("Reading configuration file...");
+			}
             String contents = new String(Files.readAllBytes(configFile.toPath()));
             ObjectMapper mapper = new ObjectMapper();
             //VSCode allows comments, so we should too
             mapper.configure(JsonParser.Feature.ALLOW_COMMENTS, true);
             mapper.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA, true);
             json = mapper.readTree(contents);
+			if(options.verbose)
+			{
+				System.out.println("Validating configuration file...");
+			}
             Set<ValidationMessage> errors = schema.validate(json);
             if (!errors.isEmpty())
             {
@@ -279,23 +345,50 @@ public class ASConfigC
 					combinedMessage.append(error.getMessage() + "\n");
 				}
             	throw new ASConfigCException(combinedMessage.toString());
-            }
+			}
+			if(json.has(TopLevelFields.EXTENDS))
+			{
+				String otherConfigPath = json.get(TopLevelFields.EXTENDS).asText();
+				File otherConfigFile = new File(otherConfigPath);
+				JsonNode otherJson = loadConfigFromFileWithSchema(otherConfigFile, schema);
+				json = ConfigUtils.mergeConfigs(json, otherJson);
+			}
 		}
 		catch(JsonProcessingException e)
 		{
 			//this exception is expected sometimes if the JSON is invalid
 			JsonLocation location = e.getLocation();
-			throw new ASConfigCException("Invalid asconfig.json:\n" + e.getOriginalMessage() + " (line " + location.getLineNr() + ", column " + location.getColumnNr() + ")");
+			throw new ASConfigCException("Invalid configuration in file " + configFile.getName() + ":\n" + e.getOriginalMessage() + " (line " + location.getLineNr() + ", column " + location.getColumnNr() + ")");
 		}
         catch(IOException e)
         {
-			throw new ASConfigCException("Failed to read asconfig.json: " + e);
+			throw new ASConfigCException("Failed to read " + configFile.getName() + ": " + e);
 		}
 		return json;
+	}
+
+	private void printConfig(JsonNode json) throws ASConfigCException
+	{
+		ObjectMapper mapper = new ObjectMapper();
+		try
+		{
+			String configAsString = mapper
+				.writerWithDefaultPrettyPrinter()
+				.writeValueAsString(json);
+			System.out.println(configAsString);
+		}
+		catch(JsonProcessingException e)
+		{
+			throw new ASConfigCException("Failed to write config: " + e);
+		}
 	}
 	
 	private void parseConfig(JsonNode json) throws ASConfigCException
 	{
+		if(options.verbose)
+		{
+			System.out.println("Parsing configuration file...");
+		}
 		clean = options.clean != null && options.clean.equals(true);
 		debugBuild = options.debug != null && options.debug.equals(true);
 		compilerOptions = new ArrayList<>();
@@ -313,7 +406,7 @@ public class ASConfigC
 		if(json.has(TopLevelFields.CONFIG))
 		{
 			String configName = json.get(TopLevelFields.CONFIG).asText();
-			detectJavaScript(configName);
+			detectConfigRequirements(configName);
 			compilerOptions.add("+configname=" + configName);
 		}
 		if(json.has(TopLevelFields.COMPILER_OPTIONS))
@@ -340,34 +433,65 @@ public class ASConfigC
 			String additionalOptions = json.get(TopLevelFields.ADDITIONAL_OPTIONS).asText();
 			if(additionalOptions != null)
 			{
-				//parse the additional options by splitting on whitespace
-				//except when an option is wrapped in quotes
-				Matcher matcher = ADDITIONAL_OPTIONS_PATTERN.matcher(additionalOptions);
-				while(matcher.find())
-				{
-					String quotedOption = matcher.group(1);
-					if(quotedOption != null)
-					{
-						compilerOptions.add(quotedOption);
-					}
-					else //not quoted
-					{
-						compilerOptions.add(matcher.group(2));
-					}
-				}
+				//split the additionalOptions into separate values so that we can
+				//pass them in as String[], as the compiler expects.
+				compilerOptions.addAll(OptionsUtils.parseAdditionalOptions(additionalOptions));
 			}
+		}
+		//if js-output-type was not specified, use the default
+		//swf projects won't have a js-output-type
+		if(jsOutputType != null)
+		{
+			compilerOptions.add("--" + CompilerOptions.JS_OUTPUT_TYPE + "=" + jsOutputType);
 		}
 		if(json.has(TopLevelFields.APPLICATION))
 		{
-			airDescriptorPath = json.get(TopLevelFields.APPLICATION).asText();
-			File airDescriptor = new File(airDescriptorPath);
-			if(!airDescriptor.isAbsolute())
+			configRequiresAIR = true;
+			airDescriptorPaths = new ArrayList<String>();
+			JsonNode application = json.get(TopLevelFields.APPLICATION);
+			if(application.isTextual())
 			{
-				airDescriptor = new File(System.getProperty("user.dir"), airDescriptorPath);
+				//if it's a string, just use it as is for all platforms
+				String airDescriptorPath = application.asText();
+				airDescriptorPaths.add(airDescriptorPath);
 			}
-			if(!airDescriptor.exists() || airDescriptor.isDirectory())
+			else if(options.air != null)
 			{
-				throw new ASConfigCException("Adobe AIR application descriptor not found: " + airDescriptor);
+				//if it's an object, and we're packaging an AIR app, we need to
+				//grab the descriptor for the platform we're targeting
+				//we can ignore the rest
+				if(application.has(options.air))
+				{
+					String airDescriptorPath = application.get(options.air).asText();
+					airDescriptorPaths.add(airDescriptorPath);
+				}
+			}
+			else
+			{
+				//if it's an object, and we're compiling and not packaging an
+				//AIR app, we need to use all of the descriptors
+				Iterator<String> fieldNames = application.fieldNames();
+				while(fieldNames.hasNext())
+				{
+					String fieldName = fieldNames.next();
+					String airDescriptorPath = application.get(fieldName).asText();
+					airDescriptorPaths.add(airDescriptorPath);
+				}
+			}
+			if(airDescriptorPaths != null)
+			{
+				for(String airDescriptorPath : airDescriptorPaths)
+				{
+					File airDescriptor = new File(airDescriptorPath);
+					if(!airDescriptor.isAbsolute())
+					{
+						airDescriptor = new File(System.getProperty("user.dir"), airDescriptorPath);
+					}
+					if(!airDescriptor.exists() || airDescriptor.isDirectory())
+					{
+						throw new ASConfigCException("Adobe AIR application descriptor not found: " + airDescriptor);
+					}
+				}
 			}
 		}
 		//parse files before airOptions because the mainFile may be
@@ -388,21 +512,43 @@ public class ASConfigC
 				int size = files.size();
 				for(int i = 0; i < size; i++)
 				{
+					if(i == 0)
+					{
+						//terminate previous options and start default options
+						compilerOptions.add("--");
+					}
 					String file = files.get(i).asText();
 					compilerOptions.add(file);
 				}
 				if(size > 0)
 				{
+					//mainClass is preferred, but for backwards compatibility,
+					//we need to support setting the entry point with files too
 					mainFile = files.get(size - 1).asText();
 				}
 			}
 		}
+		//mainClass must be parsed after files
+		if(ProjectType.APP.equals(projectType) && json.has(TopLevelFields.MAIN_CLASS))
+		{
+			//if set already, clear it because we're going to replace it
+			boolean hadMainFile = mainFile != null;
+			String mainClass = json.get(TopLevelFields.MAIN_CLASS).asText();
+			mainFile = ConfigUtils.resolveMainClass(mainClass, sourcePaths);
+			if(mainFile == null)
+			{
+				throw new ASConfigCException("Main class not found in source paths: " + mainClass);
+			}
+			if(!hadMainFile)
+			{
+				//terminate previous options and start default options
+				compilerOptions.add("--");
+			}
+			compilerOptions.add(mainFile);
+		}
 		if(json.has(TopLevelFields.AIR_OPTIONS))
 		{
-			if(airDescriptorPath == null)
-			{
-				throw new ASConfigCException("Adobe AIR packaging options found, but the \"application\" field is empty.");
-			}
+			configRequiresAIR = true;
 			airOptionsJSON = json.get(TopLevelFields.AIR_OPTIONS);
 			readAIROptions(airOptionsJSON);
 		}
@@ -423,16 +569,22 @@ public class ASConfigC
 			}
 			readHTMLTemplateOptions(compilerOptionsJson);
 		}
-
-		//if js-output-type was not specified, use the default
-		//swf projects won't have a js-output-type
-		if(jsOutputType != null)
+		if(json.has(TopLevelFields.ANIMATE_OPTIONS))
 		{
-			compilerOptions.add("--" + CompilerOptions.JS_OUTPUT_TYPE + "=" + jsOutputType);
+			JsonNode animateOptions = json.get(TopLevelFields.ANIMATE_OPTIONS);
+			if(animateOptions.has(AnimateOptions.FILE))
+			{
+				animateFile = animateOptions.get(AnimateOptions.FILE).asText();
+				Path animateFilePath = Paths.get(animateFile);
+				if(!animateFilePath.isAbsolute())
+				{
+					animateFile = Paths.get(System.getProperty("user.dir")).resolve(animateFile).toString();
+				}
+			}
 		}
 	}
 
-	private void detectJavaScript(String configName)
+	private void detectConfigRequirements(String configName)
 	{
 		switch(configName)
 		{
@@ -454,8 +606,264 @@ public class ASConfigC
 				configRequiresRoyale = true;
 				break;
 			}
+			case ConfigName.AIR:
+			{
+				configRequiresAIR = true;
+				break;
+			}
+			case ConfigName.AIRMOBILE:
+			{
+				configRequiresAIR = true;
+				break;
+			}
 		}
 	}
+
+	private void compileAnimateFile() throws ASConfigCException
+	{
+		String animatePath = options.animate;
+		if(animatePath == null)
+		{
+			throw new ASConfigCException("Adobe Animate not found. Use --animate option.");
+		}
+		if(!Files.exists(Paths.get(animatePath)))
+		{
+			throw new ASConfigCException("Adobe Animate not found at path: " + animatePath);
+		}
+		File jarFile = null;
+		try
+		{
+			jarFile = new File(getClass().getProtectionDomain().getCodeSource().getLocation().toURI());
+		}
+		catch(URISyntaxException e)
+		{
+			StringWriter stackTrace = new StringWriter();
+			e.printStackTrace(new PrintWriter(stackTrace));
+			throw new ASConfigCException("Error: Failed to find Adobe Animate script.\n" + stackTrace.toString());
+		}
+		boolean publish = options.publishAnimate;
+		String jsflFileName = null;
+		if(publish)
+		{
+			jsflFileName = debugBuild ? "publish-debug.jsfl" : "publish-release.jsfl";
+		}
+		else
+		{
+			jsflFileName = debugBuild ? "compile-debug.jsfl" : "compile-release.jsfl";
+		}
+		Path jsflPath = Paths.get(jarFile.getParentFile().getParentFile().getAbsolutePath(), "jsfl", jsflFileName);
+		try
+		{
+			File tempFile = File.createTempFile("vscode-as3mxml", ".jsfl");
+			tempFile.deleteOnExit();
+			Path tempPath = tempFile.toPath();
+			String contents = new String(Files.readAllBytes(jsflPath));
+			Path resolvedOutputPath = null;
+			if(outputPath == null)
+			{
+				resolvedOutputPath = Paths.get(animateFile);
+				if(!resolvedOutputPath.isAbsolute())
+				{
+					resolvedOutputPath = Paths.get(System.getProperty("user.dir")).resolve(resolvedOutputPath);
+				}
+				String fileName = resolvedOutputPath.getFileName().toString();
+				int extIndex = fileName.lastIndexOf(".");
+				if(extIndex != -1)
+				{
+					fileName = fileName.substring(0, extIndex) + ".swf";
+				}
+				resolvedOutputPath = resolvedOutputPath.getParent().resolve(fileName);
+			}
+			else
+			{
+				resolvedOutputPath = Paths.get(ProjectUtils.findOutputPath(mainFile, outputPath, true));
+			}
+			Path parentPath = resolvedOutputPath.getParent();
+			if(!Files.exists(parentPath) && !parentPath.toFile().mkdirs())
+			{
+				throw new ASConfigCException("Error: Failed to create Adobe Animate output folder: " + parentPath.toString());
+			}
+			URI resolvedUri = resolvedOutputPath.toUri();
+			contents = contents.replace("${OUTPUT_URI}", resolvedUri.toString());
+			Files.write(tempPath, contents.getBytes());
+			jsflPath = tempPath;
+		}
+		catch(IOException e)
+		{
+			StringWriter stackTrace = new StringWriter();
+			e.printStackTrace(new PrintWriter(stackTrace));
+			throw new ASConfigCException("Error: Failed to copy Adobe Animate script.\n" + stackTrace.toString());
+		}
+
+		boolean isMacOS = System.getProperty("os.name").toLowerCase().startsWith("mac os");
+		List<String> command = new ArrayList<>();
+		if (isMacOS)
+		{
+			command.add("open");
+			command.add("-a");
+		}
+		command.add(animatePath);
+		command.add(animateFile);
+		command.add(jsflPath.toString());
+		
+		if(options.verbose)
+		{
+			System.out.println("Compiling Adobe Animate project...");
+			System.out.println(String.join(" ", command));
+		}
+		File cwd = new File(System.getProperty("user.dir"));
+		try
+		{
+			new ProcessBuilder()
+				.command(command)
+				.directory(cwd)
+				.inheritIO()
+				.start();
+		}
+		catch(IOException e)
+		{
+			throw new ASConfigCException("Failed to execute Adobe Animate: " + e.getMessage());
+		}
+
+		Path pathToWatch = null;
+		if (System.getProperty("os.name").toLowerCase().startsWith("windows"))
+		{
+			pathToWatch = Paths.get(System.getenv("LOCALAPPDATA"), "Adobe", "vscode-as3mxml");
+		}
+		else if (isMacOS)
+		{
+			pathToWatch = Paths.get(System.getProperty("user.home")).resolve("Library/Application Support/Adobe/vscode-as3mxml");
+		}
+		if(pathToWatch == null)
+		{
+			throw new ASConfigCException("Failed to locate Adobe Animate logs.");
+		}
+		//macOS seems to require these files to be manually deleted to detect
+		//the appropriate create event
+		if(Files.exists(pathToWatch))
+		{
+			try
+			{
+				Files.walk(pathToWatch)
+					.sorted(Comparator.reverseOrder())
+					.map(Path::toFile)
+					.forEach(File::delete);
+			}
+			catch(IOException e)
+			{
+				throw new ASConfigCException("Failed to delete Adobe Animate logs because an I/O exception occurred.");
+			}
+		}
+		if(!Files.exists(pathToWatch) && !pathToWatch.toFile().mkdirs())
+		{
+			throw new ASConfigCException("Failed to create folder for Adobe Animate publish: " + pathToWatch);
+		}
+		createAnimatePublishWatcher(pathToWatch);
+	}
+
+    private void createAnimatePublishWatcher(Path pathToWatch) throws ASConfigCException
+    {
+        try
+        {
+            animateWatcher = FileSystems.getDefault().newWatchService();
+        }
+        catch (IOException e)
+        {
+			StringWriter stackTrace = new StringWriter();
+			e.printStackTrace(new PrintWriter(stackTrace));
+			throw new ASConfigCException("Failed to get file system watch service for Adobe Animate publish.\n" + stackTrace.toString());
+        }
+		try
+		{
+			try
+			{
+				//file system changes are detected very, very slowly on macOS
+				//without high sensitivity
+				Class<?> c = Class.forName("com.sun.nio.file.SensitivityWatchEventModifier");
+				Field f = c.getField("HIGH");
+				Modifier modifier = (Modifier) f.get(c);
+				pathToWatch.register(animateWatcher, new WatchEvent.Kind[]{StandardWatchEventKinds.ENTRY_CREATE}, modifier);
+			}
+			catch(Exception e)
+			{
+				//fall back to the slow version
+				pathToWatch.register(animateWatcher, StandardWatchEventKinds.ENTRY_CREATE);
+			}
+		}
+		catch(IOException e)
+		{
+			StringWriter stackTrace = new StringWriter();
+			e.printStackTrace(new PrintWriter(stackTrace));
+			throw new ASConfigCException("Failed to get watch path for Adobe Animate publish: " + pathToWatch + "\n" + stackTrace.toString());
+        }
+		Path errorLogPath = Paths.get(FILE_NAME_ANIMATE_ERROR_LOG);
+		Path publishLogPath = Paths.get(FILE_NAME_ANIMATE_PUBLISH_LOG);
+		boolean hasErrors = false;
+		while(true)
+		{
+			WatchKey watchKey = null;
+			try
+			{
+				//pause the thread while there are no changes pending,
+				//for better performance
+				watchKey = animateWatcher.take();
+			}
+			catch(InterruptedException e)
+			{
+				return;
+			}
+			while (watchKey != null)
+			{
+				for (WatchEvent<?> event : watchKey.pollEvents())
+				{
+					WatchEvent.Kind<?> kind = event.kind();
+					Path childPath = (Path) event.context();
+					if(errorLogPath.equals(childPath) && kind.equals(StandardWatchEventKinds.ENTRY_CREATE))
+					{
+						hasErrors = true;
+					}
+					else if(publishLogPath.equals(childPath) && kind.equals(StandardWatchEventKinds.ENTRY_CREATE))
+					{
+						if(hasErrors)
+						{
+							//switch to full path
+							errorLogPath = pathToWatch.resolve(errorLogPath);
+							String contents = null;
+							try
+							{
+								contents = new String(Files.readAllBytes(errorLogPath));
+								if(contents.startsWith("ï»¿"))
+								{
+									//remove byte order mark
+									contents = contents.substring(3);
+								}
+							}
+							catch(IOException e)
+							{
+								StringWriter stackTrace = new StringWriter();
+								e.printStackTrace(new PrintWriter(stackTrace));
+								throw new ASConfigCException("Failed to read Adobe Animate error log: " + errorLogPath + "\n" + stackTrace.toString());
+							}
+							//print the errors/warnings to the console
+							System.err.println(contents);
+							if(contents.contains("**Error** "))
+							{
+								//compiler errors
+								throw new ASConfigCException(1);
+							}
+						}
+						//publish has completed, so we don't need to watch for
+						//any more changes
+						return;
+					}
+				}
+				watchKey.reset();
+
+				//keep handling new changes until we run out
+				watchKey = animateWatcher.poll();
+			}
+		}
+    }
 	
 	private void readHTMLTemplateOptions(JsonNode compilerOptionsJson) throws ASConfigCException
 	{
@@ -535,6 +943,11 @@ public class ASConfigC
 		{
 			return;
 		}
+		String airDescriptorPath = null;
+		if(airDescriptorPaths != null && airDescriptorPaths.size() > 0)
+		{
+			airDescriptorPath = airDescriptorPaths.get(0);
+		}
 		AIROptionsParser parser = new AIROptionsParser();
 		try
 		{
@@ -606,6 +1019,10 @@ public class ASConfigC
 			throw new ASConfigCException("Configuration options in asconfig.json require Apache FlexJS. Path to SDK is not valid: " + sdkHome);
 		}
 		outputIsJS = (sdkIsRoyale || sdkIsFlexJS) && !isSWFTargetOnly;
+		if(options.verbose)
+		{
+			System.out.println("SDK: " + sdkHomePath);
+		}
 	}
 
 	private void cleanProject() throws ASConfigCException
@@ -615,13 +1032,17 @@ public class ASConfigC
 			return;
 		}
 
+		if(options.verbose)
+		{
+			System.out.println("Cleaning project...");
+		}
 		String outputDirectory = ProjectUtils.findOutputDirectory(mainFile, outputPath, !outputIsJS);
 		Path outputPath = Paths.get(outputDirectory);
 		if(outputIsJS)
 		{
-			Path debugOutputPath = outputPath.resolve("bin/js-debug");
+			Path debugOutputPath = outputPath.resolve(FILE_NAME_BIN_JS_DEBUG);
 			deleteOutputDirectory(debugOutputPath);
-			Path releaseOutputPath = outputPath.resolve("bin/js-release");
+			Path releaseOutputPath = outputPath.resolve(FILE_NAME_BIN_JS_RELEASE);
 			deleteOutputDirectory(releaseOutputPath);
 		}
 		else //swf
@@ -652,7 +1073,11 @@ public class ASConfigC
 			//the parent directory of the main file is automatically added as a
 			//source path by the compiler
 			Path mainFileParent = Paths.get(mainFile).getParent();
-			sourcePathsCopy.add(mainFileParent.toString());
+			//may be null if the path is already root
+			if(mainFileParent != null)
+			{
+				sourcePathsCopy.add(mainFileParent.toString());
+			}
 		}
 		for(int i = 0, size = sourcePathsCopy.size(); i < size; i++)
 		{
@@ -672,6 +1097,10 @@ public class ASConfigC
 
 		if(Files.exists(outputPath))
 		{
+			if(options.verbose)
+			{
+				System.out.println("Deleting: " + outputPath);
+			}
 			try
 			{
 				Files.walk(outputPath)
@@ -702,20 +1131,7 @@ public class ASConfigC
 		{
 			throw new ASConfigCException(e.getMessage());
 		}
-		File targetFile = new File(targetPath);
-		File targetParent = targetFile.getParentFile();
-		if(!targetParent.exists() && !targetParent.mkdirs())
-		{
-			throw new ASConfigCException("Failed to copy file from source " + assetPath + " to destination " + targetParent.getAbsolutePath() + " because the directories could not be created.");
-		}
-		try
-		{
-			Files.copy(Paths.get(assetPath), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-		}
-		catch(IOException e)
-		{
-			throw new ASConfigCException("Failed to copy file from source " + assetPath + " to destination " + targetPath);
-		}
+		createParentAndCopyAsset(Paths.get(assetPath), Paths.get(targetPath));
 	}
 	
 	private void copySourcePathAssets() throws ASConfigCException
@@ -731,11 +1147,11 @@ public class ASConfigC
 		}
 		String outputDirectory = ProjectUtils.findOutputDirectory(mainFile, outputPath, !outputIsJS);
 		ArrayList<String> excludes = new ArrayList<>();
-		if(airDescriptorPath != null)
+		if(airDescriptorPaths != null)
 		{
-			excludes.add(airDescriptorPath);
+			excludes.addAll(airDescriptorPaths);
 		}
-		List<String> assetPaths = null;
+		Set<String> assetPaths = null;
 		try
 		{
 			assetPaths = ProjectUtils.findSourcePathAssets(mainFile, sourcePaths, outputDirectory, excludes, Arrays.asList(FILE_EXTENSION_AS, FILE_EXTENSION_MXML));
@@ -744,15 +1160,23 @@ public class ASConfigC
 		{
 			throw new ASConfigCException(e.getMessage());
 		}
+		if(assetPaths.size() == 0)
+		{
+			return;
+		}
+		if(options.verbose)
+		{
+			System.out.println("Copying source path assets...");
+		}
 		for(String assetPath : assetPaths)
 		{
 			if(outputIsJS)
 			{
-				File outputDirectoryJSDebug = new File(outputDirectory, "bin/js-debug");
+				File outputDirectoryJSDebug = new File(outputDirectory, FILE_NAME_BIN_JS_DEBUG);
 				copySourcePathAssetToOutputDirectory(assetPath, mainFile, sourcePaths, outputDirectoryJSDebug.getAbsolutePath());
 				if(!debugBuild)
 				{
-					File outputDirectoryJSRelease = new File(outputDirectory, "bin/js-release");
+					File outputDirectoryJSRelease = new File(outputDirectory, FILE_NAME_BIN_JS_RELEASE);
 					copySourcePathAssetToOutputDirectory(assetPath, mainFile, sourcePaths, outputDirectoryJSRelease.getAbsolutePath());
 				}
 			}
@@ -770,6 +1194,12 @@ public class ASConfigC
 			//nothing to copy if this field is omitted
 			return;
 		}
+
+		if(options.verbose)
+		{
+			System.out.println("Copying HTML template...");
+		}
+
 		File templateDirectory = new File(htmlTemplate);
 		if(!templateDirectory.exists())
 		{
@@ -834,7 +1264,7 @@ public class ASConfigC
 					}
 				}
 				File outputFile = new File(outputDirectory, fileName);
-				Files.copy(file.toPath(), outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+				createParentAndCopyAsset(file.toPath(), outputFile.toPath());
 			}
 		}
 		catch(IOException e)
@@ -867,19 +1297,35 @@ public class ASConfigC
 			return;
 		}
 
+		List<File> anes = new ArrayList<>();
 		if(compilerOptionsJSON.has(CompilerOptions.LIBRARY_PATH))
 		{
 			JsonNode libraryPathJSON = compilerOptionsJSON.get(CompilerOptions.LIBRARY_PATH);
-			unpackANEs(libraryPathJSON);
+			findANEs(libraryPathJSON, anes);
 		}
 		if(compilerOptionsJSON.has(CompilerOptions.EXTERNAL_LIBRARY_PATH))
 		{
 			JsonNode externalLibraryPathJSON = compilerOptionsJSON.get(CompilerOptions.EXTERNAL_LIBRARY_PATH);
-			unpackANEs(externalLibraryPathJSON);
+			findANEs(externalLibraryPathJSON, anes);
+		}
+
+		if(anes.size() == 0)
+		{
+			return;
+		}
+		
+		if(options.verbose)
+		{
+			System.out.println("Unpacking Adobe AIR native extensions...");
+		}
+
+		for(File aneFile : anes)
+		{
+			unpackANE(aneFile);
 		}
 	}
 
-	private void unpackANEs(JsonNode libraryPathJSON) throws ASConfigCException
+	private void findANEs(JsonNode libraryPathJSON, List<File> result) throws ASConfigCException
 	{
 		for(int i = 0, size = libraryPathJSON.size(); i < size; i++)
 		{
@@ -887,7 +1333,7 @@ public class ASConfigC
 			if(libraryPath.endsWith(FILE_EXTENSION_ANE))
 			{
 				File file = new File(libraryPath);
-				unpackANE(file);
+				result.add(file);
 			}
 			else
 			{
@@ -903,7 +1349,7 @@ public class ASConfigC
 						continue;
 					}
 					File childFile = new File(file, child);
-					unpackANE(childFile);
+					result.add(childFile);
 				}
 			}
 		}
@@ -916,6 +1362,10 @@ public class ASConfigC
 			//this is either an ANE that's already unpacked
 			//...or something else entirely
 			return;
+		}
+		if(options.verbose)
+		{
+			System.out.println("Unpacking: " + aneFile.getAbsolutePath());
 		}
 		String outputDirectoryPath = ProjectUtils.findOutputDirectory(mainFile, outputPath, !outputIsJS);
 		File outputDirectory = new File(outputDirectoryPath);
@@ -965,6 +1415,43 @@ public class ASConfigC
 			throw new ASConfigCException("Failed to copy Adobe AIR native extension from path: " + aneFile.getAbsolutePath() + ".");
 		}
 	}
+
+	private void createParentAndCopyAsset(Path srcPath, Path destPath) throws ASConfigCException
+	{
+		File destFile = new File(destPath.toString());
+		File destParent = destFile.getParentFile();
+		if(!destParent.exists() && !destParent.mkdirs())
+		{
+			throw new ASConfigCException("Failed to copy file from source " + srcPath + " to destination " + destParent.getAbsolutePath() + " because the directories could not be created.");
+		}
+		copyAsset(srcPath, destPath, true);
+	}
+
+	private void copyAsset(Path srcPath, Path destPath, boolean retry) throws ASConfigCException
+	{
+		if(options.verbose)
+		{
+			System.out.println("Copying asset: " + srcPath);
+		}
+		try
+		{
+			Files.copy(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
+		}
+		catch(IOException e)
+		{
+			//if the destination file is not writable, make it writable and try
+			//again one more time.
+			//do this check AFTER failure because it's slow to check whether
+			//every file exists and is writable
+			if(retry && Files.exists(destPath) && !Files.isWritable(destPath))
+			{
+				destPath.toFile().setWritable(true);
+				copyAsset(srcPath, destPath, false);
+				return;
+			}
+			throw new ASConfigCException("Failed to copy file from source " + srcPath.toString() + " to destination " + destPath.toString());
+		}
+	}
 	
 	private void copyAIRFiles() throws ASConfigCException
 	{
@@ -985,6 +1472,11 @@ public class ASConfigC
 			return;
 		}
 
+		if(options.verbose)
+		{
+			System.out.println("Copying Adobe AIR application files...");
+		}
+
 		String outputDirectoryPath = ProjectUtils.findOutputDirectory(mainFile, outputPath, !outputIsJS);
 		File outputDirectory = new File(outputDirectoryPath);
 
@@ -998,54 +1490,20 @@ public class ASConfigC
 				File srcFile = new File(filePath);
 				if(outputIsJS)
 				{
-					File outputDirectoryJSDebug = new File(outputDirectory, "bin/js-debug");
-					if(!outputDirectoryJSDebug.exists() && !outputDirectoryJSDebug.mkdirs())
-					{
-						throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + outputDirectoryJSDebug.getAbsolutePath() + " because the directories could not be created.");
-					}
+					File outputDirectoryJSDebug = new File(outputDirectory, FILE_NAME_BIN_JS_DEBUG);
 					File destFileJSDebug = new File(outputDirectoryJSDebug, srcFile.getName());
-					try
-					{
-						Files.copy(srcFile.toPath(), destFileJSDebug.toPath(), StandardCopyOption.REPLACE_EXISTING);
-					}
-					catch(IOException e)
-					{
-						throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + destFileJSDebug.getAbsolutePath());
-					}
+					createParentAndCopyAsset(srcFile.toPath(), destFileJSDebug.toPath());
 					if(!debugBuild)
 					{
-						File outputDirectoryJSRelease = new File(outputDirectory, "bin/js-release");
-						if(!outputDirectoryJSRelease.exists() && !outputDirectoryJSRelease.mkdirs())
-						{
-							throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + outputDirectoryJSRelease.getAbsolutePath() + " because the directories could not be created.");
-						}
+						File outputDirectoryJSRelease = new File(outputDirectory, FILE_NAME_BIN_JS_RELEASE);
 						File destFileJSRelease = new File(outputDirectoryJSRelease, srcFile.getName());
-						try
-						{
-							Files.copy(srcFile.toPath(), destFileJSRelease.toPath(), StandardCopyOption.REPLACE_EXISTING);
-						}
-						catch(IOException e)
-						{
-							throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + destFileJSRelease.getAbsolutePath());
-						}
+						createParentAndCopyAsset(srcFile.toPath(), destFileJSRelease.toPath());
 					}
 				}
 				else //swf
 				{
 					File destFile = new File(outputDirectory, srcFile.getName());
-					File destParent = destFile.getParentFile();
-					if(!destParent.exists() && !destParent.mkdirs())
-					{
-						throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + destParent.getAbsolutePath() + " because the directories could not be created.");
-					}
-					try
-					{
-						Files.copy(srcFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-					}
-					catch(IOException e)
-					{
-						throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + destFile.getAbsolutePath());
-					}
+					createParentAndCopyAsset(srcFile.toPath(), destFile.toPath());
 				}
 			}
 			else //JSON object
@@ -1056,6 +1514,7 @@ public class ASConfigC
 				{
 					srcFile = new File(System.getProperty("user.dir"), srcFilePath);
 				}
+				boolean srcIsDir = srcFile.isDirectory();
 
 				String destFilePath = fileJSON.get(AIROptions.FILES__PATH).asText();
 				File destFile = new File(outputDirectory, destFilePath);
@@ -1063,7 +1522,7 @@ public class ASConfigC
 				Path relativePath = outputDirectory.toPath().relativize(destFile.toPath());
 				try
 				{
-					if(relativePath.toString().startsWith("..") || destFile.getCanonicalPath().equals(outputDirectory.getCanonicalPath()))
+					if(relativePath.toString().startsWith("..") || (!srcIsDir && destFile.getCanonicalPath().equals(outputDirectory.getCanonicalPath())))
 					{
 						throw new ASConfigCException("Invalid destination path for file in Adobe AIR application. Source: " + srcFilePath + ", Destination: " + destFilePath);
 					}
@@ -1073,34 +1532,36 @@ public class ASConfigC
 					throw new ASConfigCException(e.getMessage());
 				}
 
-				if(srcFile.isDirectory())
+				if(srcIsDir)
 				{
-					List<String> assetDirList = Arrays.asList(srcFile.getAbsolutePath());
-					List<String> assetPaths = null;
+					Set<String> assetPaths = null;
 					try
 					{
+						List<String> assetDirList = Arrays.asList(srcFile.getAbsolutePath());
 						assetPaths = ProjectUtils.findSourcePathAssets(null, assetDirList, outputDirectory.getAbsolutePath(), null, null);
 					}
 					catch(IOException e)
 					{
 						throw new ASConfigCException(e.getMessage());
 					}
-					assetDirList = Arrays.asList(srcFile.getParentFile().getAbsolutePath());
 					for(String assetPath : assetPaths)
 					{
+						Path assetPathPath = Paths.get(assetPath);
+						Path relativeAssetPath = srcFile.toPath().relativize(assetPathPath);
 						if(outputIsJS)
 						{
-							File outputDirectoryJSDebug = new File(outputDirectory, "bin/js-debug");
-							copySourcePathAssetToOutputDirectory(assetPath, null, assetDirList, outputDirectoryJSDebug.getAbsolutePath());
+							Path jsDebugAssetOutputPath = destFile.toPath().resolve(FILE_NAME_BIN_JS_DEBUG).resolve(relativeAssetPath);
+							createParentAndCopyAsset(assetPathPath, jsDebugAssetOutputPath);
 							if(!debugBuild)
 							{
-								File outputDirectoryJSRelease = new File(outputDirectory, "bin/js-release");
-								copySourcePathAssetToOutputDirectory(assetPath, null, assetDirList, outputDirectoryJSRelease.getAbsolutePath());
+								Path jsReleaseAssetOutputPath = destFile.toPath().resolve(FILE_NAME_BIN_JS_RELEASE).resolve(relativeAssetPath);
+								createParentAndCopyAsset(assetPathPath, jsReleaseAssetOutputPath);
 							}
 						}
 						else //swf
 						{
-							copySourcePathAssetToOutputDirectory(assetPath, null, assetDirList, outputDirectory.getAbsolutePath());
+							Path assetOutputPath = destFile.toPath().resolve(relativeAssetPath);
+							createParentAndCopyAsset(assetPathPath, assetOutputPath);
 						}
 					}
 				}
@@ -1108,53 +1569,19 @@ public class ASConfigC
 				{
 					if(outputIsJS)
 					{
-						File outputDirectoryJSDebug = new File(outputDirectory, "bin/js-debug");
-						if(!outputDirectoryJSDebug.exists() && !outputDirectoryJSDebug.mkdirs())
-						{
-							throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + outputDirectoryJSDebug.getAbsolutePath() + " because the directories could not be created.");
-						}
+						File outputDirectoryJSDebug = new File(outputDirectory, FILE_NAME_BIN_JS_DEBUG);
 						File destFileJSDebug = new File(outputDirectoryJSDebug, destFilePath);
-						try
-						{
-							Files.copy(srcFile.toPath(), destFileJSDebug.toPath(), StandardCopyOption.REPLACE_EXISTING);
-						}
-						catch(IOException e)
-						{
-							throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + destFileJSDebug.getAbsolutePath());
-						}
+						createParentAndCopyAsset(srcFile.toPath(), destFileJSDebug.toPath());
 						if(!debugBuild)
 						{
-							File outputDirectoryJSRelease = new File(outputDirectory, "bin/js-release");
-							if(!outputDirectoryJSRelease.exists() && !outputDirectoryJSRelease.mkdirs())
-							{
-								throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + outputDirectoryJSRelease.getAbsolutePath() + " because the directories could not be created.");
-							}
+							File outputDirectoryJSRelease = new File(outputDirectory, FILE_NAME_BIN_JS_RELEASE);
 							File destFileJSRelease = new File(outputDirectoryJSRelease, destFilePath);
-							try
-							{
-								Files.copy(srcFile.toPath(), destFileJSRelease.toPath(), StandardCopyOption.REPLACE_EXISTING);
-							}
-							catch(IOException e)
-							{
-								throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + destFileJSRelease.getAbsolutePath());
-							}
+							createParentAndCopyAsset(srcFile.toPath(), destFileJSRelease.toPath());
 						}
 					}
 					else //swf
 					{
-						File destParent = destFile.getParentFile();
-						if(!destParent.exists() && !destParent.mkdirs())
-						{
-							throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + destParent.getAbsolutePath() + " because the directories could not be created.");
-						}
-						try
-						{
-							Files.copy(srcFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-						}
-						catch(IOException e)
-						{
-							throw new ASConfigCException("Failed to copy file from source " + srcFile.getAbsolutePath() + " to destination " + destFile.getAbsolutePath());
-						}
+						createParentAndCopyAsset(srcFile.toPath(), destFile.toPath());
 					}
 				}
 			}
@@ -1179,48 +1606,98 @@ public class ASConfigC
 		}
 	}
 	
-	private void processAdobeAIRDescriptor() throws ASConfigCException
+	private void processAdobeAIRDescriptors() throws ASConfigCException
 	{
-		if(airDescriptorPath == null)
+		if (!configRequiresAIR)
 		{
 			return;
+		}
+		if(options.verbose)
+		{
+			System.out.println("Processing Adobe AIR application descriptor(s)...");
+		}
+		boolean populateTemplate = false;
+		if(airDescriptorPaths == null || airDescriptorPaths.size() == 0)
+		{
+			airDescriptorPaths = new ArrayList<String>();
+			String templatePath = Paths.get(sdkHome).resolve("templates/air/descriptor-template.xml").toString();
+			airDescriptorPaths.add(templatePath);
+			populateTemplate = true;
+			if(options.verbose)
+			{
+				System.out.println("Using template fallback: " + templatePath);
+			}
 		}
 		String outputDirectory = ProjectUtils.findOutputDirectory(mainFile, outputPath, !outputIsJS);
 		String contentValue = ProjectUtils.findApplicationContent(mainFile, outputPath, !outputIsJS);
 		if(contentValue == null)
 		{
-			throw new ASConfigCException("Failed to find content for Adobe AIR application descriptor.");
+			throw new ASConfigCException("Failed to find initial window content for Adobe AIR application.");
 		}
-		Path finalDescriptorPath = Paths.get(airDescriptorPath);
-		if(!finalDescriptorPath.isAbsolute())
+		if(options.verbose)
 		{
-			finalDescriptorPath = Paths.get(System.getProperty("user.dir"), airDescriptorPath);
+			System.out.println("Initial window content: " + contentValue);
 		}
-		String descriptorContents = null;
-		try
+		for(String airDescriptorPath : airDescriptorPaths)
 		{
-			descriptorContents = new String(Files.readAllBytes(finalDescriptorPath));
-		}
-		catch(IOException e)
-		{
-			throw new ASConfigCException("Failed to read Adobe AIR application descriptor at path: " + airDescriptorPath);
-		}
-		descriptorContents = ProjectUtils.populateAdobeAIRDescriptorContent(descriptorContents, contentValue);
-		if(outputIsJS)
-		{
-			String debugDescriptorOutputPath = ProjectUtils.findAIRDescriptorOutputPath(mainFile, airDescriptorPath, outputDirectory, false, true);
-			copyAIRDescriptor(debugDescriptorOutputPath, descriptorContents);
-			if(!debugBuild)
+			Path resolvedDescriptorPath = Paths.get(airDescriptorPath);
+			if(!resolvedDescriptorPath.isAbsolute())
 			{
-				String releaseDescriptorOutputPath = ProjectUtils.findAIRDescriptorOutputPath(mainFile, airDescriptorPath, outputDirectory, false, false);
-				copyAIRDescriptor(releaseDescriptorOutputPath, descriptorContents);
+				resolvedDescriptorPath = Paths.get(System.getProperty("user.dir")).resolve(resolvedDescriptorPath);
 			}
-			
-		}
-		else //swf
-		{
-			String descriptorOutputPath = ProjectUtils.findAIRDescriptorOutputPath(mainFile, airDescriptorPath, outputPath, true, debugBuild);
-			copyAIRDescriptor(descriptorOutputPath, descriptorContents);
+			if(options.verbose)
+			{
+				System.out.println("Descriptor: " + resolvedDescriptorPath);
+			}
+			String descriptorContents = null;
+			try
+			{
+				descriptorContents = new String(Files.readAllBytes(resolvedDescriptorPath));
+			}
+			catch(IOException e)
+			{
+				throw new ASConfigCException("Failed to read Adobe AIR application descriptor at path: " + resolvedDescriptorPath);
+			}
+			if(populateTemplate)
+			{
+				String appID = ProjectUtils.generateApplicationID(mainFile, outputPath);
+				if (appID == null)
+				{
+					throw new ASConfigCException("Failed to generate application ID for Adobe AIR.");
+				}
+				if(options.verbose)
+				{
+					System.out.println("Generated application ID: " + appID);
+				}
+				descriptorContents = ProjectUtils.populateAdobeAIRDescriptorTemplate(descriptorContents, appID);
+
+				//clear this so that the name is based on the project name
+				airDescriptorPath = null;
+			}
+			descriptorContents = ProjectUtils.populateAdobeAIRDescriptorContent(descriptorContents, contentValue);
+			if(outputIsJS)
+			{
+				String debugDescriptorOutputPath = ProjectUtils.findAIRDescriptorOutputPath(mainFile, airDescriptorPath, outputDirectory, false, true);
+				copyAIRDescriptor(debugDescriptorOutputPath, descriptorContents);
+				if(!debugBuild)
+				{
+					String releaseDescriptorOutputPath = ProjectUtils.findAIRDescriptorOutputPath(mainFile, airDescriptorPath, outputDirectory, false, false);
+					copyAIRDescriptor(releaseDescriptorOutputPath, descriptorContents);
+				}
+				
+			}
+			else //swf
+			{
+				String descriptorOutputPath = ProjectUtils.findAIRDescriptorOutputPath(mainFile, airDescriptorPath, outputPath, true, debugBuild);
+				if(outputPath == null && mainFile != null)
+				{
+					if(Paths.get(descriptorOutputPath).toFile().exists())
+					{
+						throw new ASConfigCException("Failed to copy Adobe AIR application descriptor template.");
+					}
+				}
+				copyAIRDescriptor(descriptorOutputPath, descriptorContents);
+			}
 		}
 	}
 	
@@ -1230,6 +1707,12 @@ public class ASConfigC
 		{
 			return;
 		}
+
+		if(options.verbose)
+		{
+			System.out.println("Packaging Adobe AIR application...");
+		}
+
 		Path jarPath = ProjectUtils.findAdobeAIRPackagerJarPath(sdkHome);
 		if(jarPath == null)
 		{
@@ -1261,6 +1744,10 @@ public class ASConfigC
 		airOptions.add(0, jarPath.toString());
 		airOptions.add(0, "-jar");
 		airOptions.add(0, javaExecutablePath.toString());
+		if(options.verbose)
+		{
+			System.out.println(String.join(" ", airOptions));
+		}
 		try
 		{
 			File cwd = new File(System.getProperty("user.dir"));

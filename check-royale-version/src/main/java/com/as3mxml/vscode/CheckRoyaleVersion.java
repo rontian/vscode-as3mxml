@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ public class CheckRoyaleVersion
 
     private static final int MIN_MAJOR = 0;
     private static final int MIN_MINOR = 9;
-    private static final int MIN_REVISION = 4;
+    private static final int MIN_REVISION = 7;
 
     public static void main(String[] args)
     {

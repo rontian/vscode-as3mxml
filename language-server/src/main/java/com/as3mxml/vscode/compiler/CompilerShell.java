@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,11 +34,11 @@ import com.as3mxml.vscode.utils.ActionScriptSDKUtils;
 
 public class CompilerShell implements IASConfigCCompiler
 {
-    private static final String ERROR_COMPILER_SHELL_NOT_FOUND = "Quick Compile & Debug requires the Adobe AIR SDK & Compiler or Apache Royale. Please choose a different SDK or build using a standard task.";
-    private static final String ERROR_COMPILER_SHELL_START = "Quick Compile & Debug failed. Error starting compiler shell.";
-    private static final String ERROR_COMPILER_SHELL_WRITE = "Quick Compile & Debug failed. Error writing to compiler shell.";
-    private static final String ERROR_COMPILER_SHELL_READ = "Quick Compile & Debug failed. Error reading from compiler shell.";
-    private static final String ERROR_COMPILER_ERRORS_FOUND = "Quick Compile & Debug failed. Errors in compiler output.";
+    private static final String ERROR_COMPILER_SHELL_NOT_FOUND = "Quick Compile requires the Adobe AIR SDK & Compiler or Apache Royale. Please choose a different SDK or build using a standard task.";
+    private static final String ERROR_COMPILER_SHELL_START = "Quick Compile failed. Error starting compiler shell.";
+    private static final String ERROR_COMPILER_SHELL_WRITE = "Quick Compile failed. Error writing to compiler shell.";
+    private static final String ERROR_COMPILER_SHELL_READ = "Quick Compile failed. Error reading from compiler shell.";
+    private static final String ERROR_COMPILER_ERRORS_FOUND = "Quick Compile failed. Errors in compiler output.";
     private static final String COMMAND_COMPILE = "compile";
     private static final String COMMAND_CLEAR = "clear";
     private static final String COMMAND_QUIT = "quit\n";
@@ -64,10 +64,12 @@ public class CompilerShell implements IASConfigCCompiler
     private Path ascshPath;
     private boolean isRoyale = false;
     private boolean isAIR = false;
+    private List<String> jvmargs = null;
 
-	public CompilerShell(ActionScriptLanguageClient languageClient) throws URISyntaxException
+	public CompilerShell(ActionScriptLanguageClient languageClient, List<String> jvmargs) throws URISyntaxException
 	{
-		this.languageClient = languageClient;
+        this.languageClient = languageClient;
+        this.jvmargs = jvmargs;
         URI uri = getClass().getProtectionDomain().getCodeSource().getLocation().toURI();
         Path binPath = Paths.get(uri).getParent().normalize();
         rcshPath = binPath.resolve(FILE_NAME_RCSH);
@@ -125,6 +127,22 @@ public class CompilerShell implements IASConfigCCompiler
         }
         startProcess(sdkPath, workspaceRoot);
         executeCommandAndWaitForPrompt(command, true);
+    }
+
+    public void dispose()
+    {
+        if(process == null)
+        {
+            return;
+        }
+        try
+        {
+            quit();
+        }
+        catch(ASConfigCException e)
+        {
+
+        }
     }
 
     private void quit() throws ASConfigCException
@@ -206,6 +224,10 @@ public class CompilerShell implements IASConfigCCompiler
         Path javaExecutablePath = Paths.get(System.getProperty("java.home"), "bin", "java");
         ArrayList<String> options = new ArrayList<>();
         options.add(javaExecutablePath.toString());
+        if(jvmargs != null)
+        {
+            options.addAll(jvmargs);
+        }
         if(isRoyale)
         {
 			//Royale requires this so that it doesn't changing the encoding of

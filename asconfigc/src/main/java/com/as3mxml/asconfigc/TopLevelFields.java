@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Bowler Hat LLC
+Copyright 2016-2020 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,4 +26,7 @@ public class TopLevelFields
 	public static final String COPY_SOURCE_PATH_ASSETS = "copySourcePathAssets";
 	public static final String AIR_OPTIONS = "airOptions";
 	public static final String HTML_TEMPLATE = "htmlTemplate";
+	public static final String ANIMATE_OPTIONS = "animateOptions";
+	public static final String EXTENDS = "extends";
+	public static final String MAIN_CLASS = "mainClass";
 }
