@@ -79,6 +79,7 @@ function onDidChangeConfiguration(event: vscode.ConfigurationChangeEvent)
 	let restarting = false;
 	if(event.affectsConfiguration("as3mxml.java.path") ||
 		event.affectsConfiguration("as3mxml.sdk.editor") ||
+		event.affectsConfiguration("as3mxml.languageServer.jvmargs") ||
 		(frameworkChanged && !explicitFrameworkSetting))
 	{
 		//we're going to try to kill the language server and then restart
@@ -374,35 +375,6 @@ function startClient()
 					},
 					//this is just the default behavior, but we need to define both
 					protocol2Code: value => vscode.Uri.parse(value)
-				},
-				middleware:
-				{
-					//TODO: move tags to language server when lsp4j supports it
-					handleDiagnostics: (uri, diagnostics, next) =>
-					{
-						diagnostics.forEach((diagnostic) =>
-						{
-							switch(diagnostic.code)
-							{
-								case "as3mxml-unused-import":
-								case "as3mxml-disabled-config-condition-block":
-								{
-									diagnostic.tags = [vscode.DiagnosticTag.Unnecessary];
-									break;
-								}
-								case "3602":
-								case "3604":
-								case "3606":
-								case "3608":
-								case "3610":
-								{
-									diagnostic.tags = [vscode.DiagnosticTag.Deprecated];
-									break;
-								}
-							}
-						});
-						next(uri, diagnostics);
-					}
 				}
 			};
 			let cpDelimiter = getJavaClassPathDelimiter();
@@ -433,6 +405,12 @@ function startClient()
 			if(frameworkSDKHome)
 			{
 				args.unshift("-Droyalelib=" + path.join(frameworkSDKHome, "frameworks"));
+			}
+			let jvmargsString = vscode.workspace.getConfiguration("as3mxml").get("languageServer.jvmargs") as string;
+			if(jvmargsString)
+			{
+				let jvmargs = jvmargsString.split(" ");
+				args.unshift(...jvmargs);
 			}
 			let primaryWorkspaceFolder: vscode.WorkspaceFolder = null;
 			if(vscode.workspace.workspaceFolders !== undefined)

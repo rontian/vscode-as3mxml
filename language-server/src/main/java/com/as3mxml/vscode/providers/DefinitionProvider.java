@@ -22,32 +22,33 @@ import java.util.Collections;
 import java.util.List;
 
 import com.as3mxml.vscode.project.WorkspaceFolderData;
+import com.as3mxml.vscode.utils.CompilationUnitUtils.IncludeFileData;
 import com.as3mxml.vscode.utils.DefinitionUtils;
 import com.as3mxml.vscode.utils.FileTracker;
 import com.as3mxml.vscode.utils.LanguageServerCompilerUtils;
 import com.as3mxml.vscode.utils.MXMLDataUtils;
 import com.as3mxml.vscode.utils.WorkspaceFolderManager;
-import com.as3mxml.vscode.utils.CompilationUnitUtils.IncludeFileData;
 
 import org.apache.royale.compiler.common.XMLName;
-import org.apache.royale.compiler.constants.IASKeywordConstants;
 import org.apache.royale.compiler.definitions.IClassDefinition;
 import org.apache.royale.compiler.definitions.IDefinition;
 import org.apache.royale.compiler.definitions.IFunctionDefinition;
-import org.apache.royale.compiler.definitions.ITypeDefinition;
 import org.apache.royale.compiler.internal.mxml.MXMLData;
 import org.apache.royale.compiler.mxml.IMXMLLanguageConstants;
 import org.apache.royale.compiler.mxml.IMXMLTagAttributeData;
 import org.apache.royale.compiler.mxml.IMXMLTagData;
 import org.apache.royale.compiler.tree.as.IASNode;
+import org.apache.royale.compiler.tree.as.IClassNode;
+import org.apache.royale.compiler.tree.as.IExpressionNode;
 import org.apache.royale.compiler.tree.as.IFunctionCallNode;
 import org.apache.royale.compiler.tree.as.IIdentifierNode;
+import org.apache.royale.compiler.tree.as.ILanguageIdentifierNode;
+import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
-import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -64,7 +65,7 @@ public class DefinitionProvider
         this.fileTracker = fileTracker;
 	}
 
-	public Either<List<? extends Location>, List<? extends LocationLink>> definition(TextDocumentPositionParams params, CancelChecker cancelToken)
+	public Either<List<? extends Location>, List<? extends LocationLink>> definition(DefinitionParams params, CancelChecker cancelToken)
 	{
 		cancelToken.checkCanceled();
 		TextDocumentIdentifier textDocument = params.getTextDocument();
@@ -133,18 +134,38 @@ public class DefinitionProvider
         {
             IIdentifierNode identifierNode = (IIdentifierNode) offsetNode;
             definition = DefinitionUtils.resolveWithExtras(identifierNode, folderData.project);
+        }
 
-            if (definition == null)
+        if(definition == null
+                && offsetNode instanceof ILanguageIdentifierNode)
+        {
+            ILanguageIdentifierNode languageIdentifierNode = (ILanguageIdentifierNode) offsetNode;
+            IExpressionNode expressionToResolve = null;
+            switch (languageIdentifierNode.getKind())
             {
-                if (identifierNode.getName().equals(IASKeywordConstants.SUPER))
+                case THIS:
                 {
-                    ITypeDefinition typeDefinition = identifierNode.resolveType(folderData.project);
-                    if (typeDefinition instanceof IClassDefinition)
+                    IClassNode classNode = (IClassNode) offsetNode.getAncestorOfType(IClassNode.class);
+                    if (classNode != null)
                     {
-                        IClassDefinition classDefinition = (IClassDefinition) typeDefinition;
-                        definition = classDefinition.getConstructor();
+                        expressionToResolve = classNode.getNameExpressionNode();
                     }
+                    break;
                 }
+                case SUPER:
+                {
+                    IClassNode classNode = (IClassNode) offsetNode.getAncestorOfType(IClassNode.class);
+                    if (classNode != null)
+                    {
+                        expressionToResolve = classNode.getBaseClassExpressionNode();
+                    }
+                    break;
+                }
+                default:
+            }
+            if (expressionToResolve != null)
+            {
+                definition = expressionToResolve.resolve(folderData.project);
             }
         }
 

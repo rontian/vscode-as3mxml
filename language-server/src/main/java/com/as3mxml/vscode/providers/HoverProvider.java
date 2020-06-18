@@ -16,9 +16,7 @@ limitations under the License.
 package com.as3mxml.vscode.providers;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 
 import com.as3mxml.vscode.project.ILspProject;
 import com.as3mxml.vscode.project.WorkspaceFolderData;
@@ -37,21 +35,24 @@ import org.apache.royale.compiler.definitions.IFunctionDefinition;
 import org.apache.royale.compiler.internal.mxml.MXMLData;
 import org.apache.royale.compiler.mxml.IMXMLTagData;
 import org.apache.royale.compiler.tree.as.IASNode;
+import org.apache.royale.compiler.tree.as.IClassNode;
+import org.apache.royale.compiler.tree.as.IExpressionNode;
 import org.apache.royale.compiler.tree.as.IFunctionCallNode;
 import org.apache.royale.compiler.tree.as.IIdentifierNode;
+import org.apache.royale.compiler.tree.as.ILanguageIdentifierNode;
 import org.apache.royale.compiler.tree.as.INamespaceDecorationNode;
 import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.MarkedString;
+import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.MarkupContent;
+import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
-import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public class HoverProvider
 {
     private static final String MARKED_STRING_LANGUAGE_ACTIONSCRIPT = "actionscript";
-    private static final String MARKED_STRING_LANGUAGE_MXML = "mxml";
+    private static final String MARKED_STRING_LANGUAGE_XML = "xml";
     private static final String FILE_EXTENSION_MXML = ".mxml";
 
     private WorkspaceFolderManager workspaceFolderManager;
@@ -63,7 +64,7 @@ public class HoverProvider
         this.fileTracker = fileTracker;
 	}
 
-	public Hover hover(TextDocumentPositionParams params, CancelChecker cancelToken)
+	public Hover hover(HoverParams params, CancelChecker cancelToken)
 	{
 		cancelToken.checkCanceled();
 		TextDocumentIdentifier textDocument = params.getTextDocument();
@@ -137,6 +138,39 @@ public class HoverProvider
             definition = DefinitionUtils.resolveWithExtras(identifierNode, project);
         }
 
+        if(definition == null
+                && offsetNode instanceof ILanguageIdentifierNode)
+        {
+            ILanguageIdentifierNode languageIdentifierNode = (ILanguageIdentifierNode) offsetNode;
+            IExpressionNode expressionToResolve = null;
+            switch (languageIdentifierNode.getKind())
+            {
+                case THIS:
+                {
+                    IClassNode classNode = (IClassNode) offsetNode.getAncestorOfType(IClassNode.class);
+                    if (classNode != null)
+                    {
+                        expressionToResolve = classNode.getNameExpressionNode();
+                    }
+                    break;
+                }
+                case SUPER:
+                {
+                    IClassNode classNode = (IClassNode) offsetNode.getAncestorOfType(IClassNode.class);
+                    if (classNode != null)
+                    {
+                        expressionToResolve = classNode.getBaseClassExpressionNode();
+                    }
+                    break;
+                }
+                default:
+            }
+            if (expressionToResolve != null)
+            {
+                definition = expressionToResolve.resolve(project);
+            }
+        }
+
         if (definition == null)
         {
             return new Hover(Collections.emptyList(), null);
@@ -162,16 +196,26 @@ public class HoverProvider
 
         Hover result = new Hover();
         String detail = DefinitionTextUtils.definitionToDetail(definition, project);
-        MarkedString markedDetail = new MarkedString(MARKED_STRING_LANGUAGE_ACTIONSCRIPT, detail);
-        List<Either<String,MarkedString>> contents = new ArrayList<>();
-        contents.add(Either.forRight(markedDetail));
+        detail = codeBlock(MARKED_STRING_LANGUAGE_ACTIONSCRIPT, detail);
         String docs = DefinitionDocumentationUtils.getDocumentationForDefinition(definition, true, project.getWorkspace(), true);
         if(docs != null)
         {
-            contents.add(Either.forLeft(docs));
+            detail += "\n\n---\n\n" + docs;
         }
-        result.setContents(contents);
+        result.setContents(new MarkupContent(MarkupKind.MARKDOWN, detail));
         return result;
+    }
+
+    private static String codeBlock(String languageId, String code)
+    {
+        StringBuilder builder = new StringBuilder();
+        builder.append("```");
+        builder.append(languageId);
+        builder.append("\n");
+        builder.append(code);
+        builder.append("\n");
+        builder.append("```");
+        return builder.toString();
     }
 
     private Hover mxmlHover(IMXMLTagData offsetTag, int currentOffset, ILspProject project)
@@ -187,7 +231,6 @@ public class HoverProvider
             //inside the prefix
             String prefix = offsetTag.getPrefix();
             Hover result = new Hover();
-            List<Either<String,MarkedString>> contents = new ArrayList<>();
             StringBuilder detailBuilder = new StringBuilder();
             if (prefix.length() > 0)
             {
@@ -197,18 +240,15 @@ public class HoverProvider
             {
                 detailBuilder.append("xmlns=\"" + offsetTag.getURI() + "\"");
             }
-            MarkedString markedDetail = new MarkedString(MARKED_STRING_LANGUAGE_MXML, detailBuilder.toString());
-            contents.add(Either.forRight(markedDetail));
-            result.setContents(contents);
+            String detail = codeBlock(MARKED_STRING_LANGUAGE_XML, detailBuilder.toString());
+            result.setContents(new MarkupContent(MarkupKind.MARKDOWN, detail));
             return result;
         }
 
         Hover result = new Hover();
         String detail = DefinitionTextUtils.definitionToDetail(definition, project);
-        MarkedString markedDetail = new MarkedString(MARKED_STRING_LANGUAGE_ACTIONSCRIPT, detail);
-        List<Either<String,MarkedString>> contents = new ArrayList<>();
-        contents.add(Either.forRight(markedDetail));
-        result.setContents(contents);
+        detail = codeBlock(MARKED_STRING_LANGUAGE_ACTIONSCRIPT, detail);
+        result.setContents(new MarkupContent(MarkupKind.MARKDOWN, detail));
         return result;
     }
 }

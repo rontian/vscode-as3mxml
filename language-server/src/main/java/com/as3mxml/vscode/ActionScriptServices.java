@@ -126,6 +126,7 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemCapabilities;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
@@ -136,6 +137,7 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentHighlight;
+import org.eclipse.lsp4j.DocumentHighlightParams;
 import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.DocumentSymbol;
@@ -144,6 +146,8 @@ import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.FileChangeType;
 import org.eclipse.lsp4j.FileEvent;
 import org.eclipse.lsp4j.Hover;
+import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.MessageParams;
@@ -154,12 +158,13 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.SignatureHelpParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextDocumentClientCapabilities;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
-import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.TypeDefinitionParams;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.WorkspaceFolder;
@@ -357,7 +362,7 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
      * something in a text document.
      */
     @Override
-    public CompletableFuture<Hover> hover(TextDocumentPositionParams params)
+    public CompletableFuture<Hover> hover(HoverParams params)
     {
         return CompletableFutures.computeAsync(compilerWorkspace.getExecutorService(), cancelToken ->
         {
@@ -390,7 +395,7 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
      * current position.
      */
     @Override
-    public CompletableFuture<SignatureHelp> signatureHelp(TextDocumentPositionParams params)
+    public CompletableFuture<SignatureHelp> signatureHelp(SignatureHelpParams params)
     {
         return CompletableFutures.computeAsync(compilerWorkspace.getExecutorService(), cancelToken ->
         {
@@ -421,7 +426,7 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
      * document is defined.
      */
     @Override
-    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(TextDocumentPositionParams params)
+    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(DefinitionParams params)
     {
         return CompletableFutures.computeAsync(compilerWorkspace.getExecutorService(), cancelToken ->
         {
@@ -451,7 +456,8 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
      * Finds where the type of the definition referenced at the current position
      * in a text document is defined.
      */
-    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(TextDocumentPositionParams params)
+    @Override
+    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(TypeDefinitionParams params)
     {
         return CompletableFutures.computeAsync(compilerWorkspace.getExecutorService(), cancelToken ->
         {
@@ -480,7 +486,8 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
     /**
      * Finds all implemenations of an interface.
      */
-    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> implementation(TextDocumentPositionParams params)
+    @Override
+    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> implementation(ImplementationParams params)
     {
         return CompletableFutures.computeAsync(compilerWorkspace.getExecutorService(), cancelToken ->
         {
@@ -542,7 +549,7 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
      * This feature is not implemented at this time.
      */
     @Override
-    public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(TextDocumentPositionParams params)
+    public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(DocumentHighlightParams params)
     {
         return CompletableFuture.completedFuture(Collections.emptyList());
     }
@@ -550,6 +557,7 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
     /**
      * Searches by name for a symbol in the workspace.
      */
+    @Override
     public CompletableFuture<List<? extends SymbolInformation>> symbol(WorkspaceSymbolParams params)
     {
         return CompletableFutures.computeAsync(compilerWorkspace.getExecutorService(), cancelToken ->
@@ -737,6 +745,7 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
      * Called when one of the commands registered in ActionScriptLanguageServer
      * is executed.
      */
+    @Override
     public CompletableFuture<Object> executeCommand(ExecuteCommandParams params)
     {
         if(params.getCommand().equals(ICommandConstants.QUICK_COMPILE))
@@ -2307,8 +2316,7 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
                 {
                     Set<String> requiredImports = project.getQNamesOfDependencies(unit);
                     ASTUtils.findUnusedImportProblems(ast, requiredImports, problems);
-                    //TODO: enable after royale-compiler provides the correct range
-                    //ASTUtils.findDisabledConfigConditionBlockProblems(ast, problems);
+                    ASTUtils.findDisabledConfigConditionBlockProblems(ast, problems);
                 }
             }
             else

@@ -20,7 +20,7 @@ limitations under the License.
 
   <groupId>com.as3mxml.vscode</groupId>
   <artifactId>vscode-as3mxml</artifactId>
-  <version>1.1.1</version>
+  <version>1.2.1</version>
   <name>vscode-as3mxml</name>
   <packaging>pom</packaging>
 
@@ -66,18 +66,5 @@ limitations under the License.
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
-
-  <repositories>
-    <repository>
-      <id>apache-snapshots</id>
-      <url>https://repository.apache.org/content/repositories/snapshots</url>
-      <releases>
-        <enabled>false</enabled>
-      </releases>
-      <snapshots>
-        <enabled>true</enabled>
-      </snapshots>
-    </repository>
-  </repositories>
 
 </project>
