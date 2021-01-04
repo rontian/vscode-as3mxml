@@ -56,59 +56,47 @@ import org.eclipse.lsp4j.services.WorkspaceService;
  * Tells Visual Studio Code about the language server's capabilities, and sets
  * up the language server's services.
  */
-public class ActionScriptLanguageServer implements LanguageServer, LanguageClientAware
-{
+public class ActionScriptLanguageServer implements LanguageServer, LanguageClientAware {
     private static final int MISSING_FRAMEWORK_LIB = 200;
     private static final int INVALID_FRAMEWORK_LIB = 201;
     private static final String PROPERTY_FRAMEWORK_LIB = "royalelib";
     private static final String FRAMEWORKS_RELATIVE_PATH_PARENT = "../frameworks";
 
     protected ActionScriptServices actionScriptServices;
-    protected IProjectConfigStrategyFactory projectConfigStrategyFactory;
     protected ActionScriptLanguageClient languageClient;
 
-    public ActionScriptLanguageServer(IProjectConfigStrategyFactory factory)
-    {
-        this.projectConfigStrategyFactory = factory;
-
+    public ActionScriptLanguageServer(IProjectConfigStrategyFactory factory) {
         //the royalelib system property may be configured in the command line
         //options, but if it isn't, use the framework included with Royale
-        if (System.getProperty(PROPERTY_FRAMEWORK_LIB) == null)
-        {
+        if (System.getProperty(PROPERTY_FRAMEWORK_LIB) == null) {
             String frameworksPath = findFrameworksPath();
-            if (frameworksPath == null)
-            {
+            if (frameworksPath == null) {
                 System.exit(MISSING_FRAMEWORK_LIB);
             }
             File frameworkLibFile = new File(frameworksPath);
-            if (!frameworkLibFile.exists() || !frameworkLibFile.isDirectory())
-            {
+            if (!frameworkLibFile.exists() || !frameworkLibFile.isDirectory()) {
                 System.exit(INVALID_FRAMEWORK_LIB);
             }
             System.setProperty(PROPERTY_FRAMEWORK_LIB, frameworksPath);
         }
+
+        actionScriptServices = new ActionScriptServices(factory);
     }
 
     /**
      * Tells Visual Studio Code about the language server's capabilities.
      */
     @Override
-    public CompletableFuture<InitializeResult> initialize(InitializeParams params)
-    {
+    public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
         actionScriptServices.setClientCapabilities(params.getCapabilities());
         actionScriptServices.setLanguageClient(languageClient);
-        actionScriptServices.setProjectConfigStrategyFactory(projectConfigStrategyFactory);
         //setting everything above must happen before adding workspace folders
         List<WorkspaceFolder> folders = params.getWorkspaceFolders();
-        if(folders != null)
-        {
-            for(WorkspaceFolder folder : params.getWorkspaceFolders())
-            {
+        if (folders != null) {
+            for (WorkspaceFolder folder : params.getWorkspaceFolders()) {
                 actionScriptServices.addWorkspaceFolder(folder);
             }
-        }
-        else if(params.getRootUri() != null)
-        {
+        } else if (params.getRootUri() != null) {
             //some clients don't support workspace folders, but if they pass in
             //a root URI, we can treat it like a workspace folder
             WorkspaceFolder folder = new WorkspaceFolder();
@@ -121,13 +109,8 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
         ServerCapabilities serverCapabilities = new ServerCapabilities();
         serverCapabilities.setTextDocumentSync(TextDocumentSyncKind.Incremental);
 
-        serverCapabilities.setCodeActionProvider(
-            new CodeActionOptions(
-                Lists.newArrayList(
-                    CodeActionKind.QuickFix,
-                    CodeActionKind.Refactor,
-                    CodeActionKind.RefactorRewrite,
-                    CodeActionKind.SourceOrganizeImports)));
+        serverCapabilities.setCodeActionProvider(new CodeActionOptions(Lists.newArrayList(CodeActionKind.QuickFix,
+                CodeActionKind.Refactor, CodeActionKind.RefactorRewrite, CodeActionKind.SourceOrganizeImports)));
 
         CompletionOptions completionOptions = new CompletionOptions();
         completionOptions.setTriggerCharacters(Arrays.asList(".", ":", " ", "<"));
@@ -155,15 +138,12 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
         workspaceFoldersOptions.setChangeNotifications(true);
         workspaceCapabilities.setWorkspaceFolders(workspaceFoldersOptions);
         serverCapabilities.setWorkspace(workspaceCapabilities);
-        
+
         ExecuteCommandOptions executeCommandOptions = new ExecuteCommandOptions();
-        executeCommandOptions.setCommands(Arrays.asList(
-            ICommandConstants.ADD_IMPORT,
-            ICommandConstants.ADD_MXML_NAMESPACE,
-            ICommandConstants.ORGANIZE_IMPORTS_IN_URI,
-            ICommandConstants.ORGANIZE_IMPORTS_IN_DIRECTORY,
-            ICommandConstants.QUICK_COMPILE
-        ));
+        executeCommandOptions
+                .setCommands(Arrays.asList(ICommandConstants.ADD_IMPORT, ICommandConstants.ADD_MXML_NAMESPACE,
+                        ICommandConstants.ORGANIZE_IMPORTS_IN_URI, ICommandConstants.ORGANIZE_IMPORTS_IN_DIRECTORY,
+                        ICommandConstants.QUICK_COMPILE, ICommandConstants.GET_ACTIVE_PROJECT_URIS));
         serverCapabilities.setExecuteCommandProvider(executeCommandOptions);
 
         result.setCapabilities(serverCapabilities);
@@ -172,19 +152,15 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
     }
 
     @Override
-    public void initialized(InitializedParams params)
-    {
+    public void initialized(InitializedParams params) {
         boolean canRegisterDidChangeWatchedFiles = false;
-        try
-        {
-            canRegisterDidChangeWatchedFiles = actionScriptServices.getClientCapabilities().getWorkspace().getDidChangeWatchedFiles().getDynamicRegistration();
-        }
-        catch(NullPointerException e)
-        {
+        try {
+            canRegisterDidChangeWatchedFiles = actionScriptServices.getClientCapabilities().getWorkspace()
+                    .getDidChangeWatchedFiles().getDynamicRegistration();
+        } catch (NullPointerException e) {
             canRegisterDidChangeWatchedFiles = false;
         }
-        if(canRegisterDidChangeWatchedFiles)
-        {
+        if (canRegisterDidChangeWatchedFiles) {
             List<FileSystemWatcher> watchers = new ArrayList<>();
             //ideally, we'd only check .as, .mxml, asconfig.json, and directories
             //but there's no way to target directories without *
@@ -207,18 +183,15 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
     }
 
     @Override
-    public CompletableFuture<Object> shutdown()
-    {
-        if(actionScriptServices != null)
-        {
+    public CompletableFuture<Object> shutdown() {
+        if (actionScriptServices != null) {
             actionScriptServices.shutdown();
         }
         return CompletableFuture.completedFuture(new Object());
     }
 
     @Override
-    public void exit()
-    {
+    public void exit() {
         System.exit(0);
     }
 
@@ -226,12 +199,7 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
      * Requests from Visual Studio Code that are at the workspace level.
      */
     @Override
-    public WorkspaceService getWorkspaceService()
-    {
-        if (actionScriptServices == null)
-        {
-            actionScriptServices = new ActionScriptServices();
-        }
+    public WorkspaceService getWorkspaceService() {
         return actionScriptServices;
     }
 
@@ -240,20 +208,13 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
      * like API completion, function signature help, find references.
      */
     @Override
-    public TextDocumentService getTextDocumentService()
-    {
-        if (actionScriptServices == null)
-        {
-            actionScriptServices = new ActionScriptServices();
-        }
+    public TextDocumentService getTextDocumentService() {
         return actionScriptServices;
     }
 
-    public void connect(ActionScriptLanguageClient client)
-    {
+    public void connect(ActionScriptLanguageClient client) {
         languageClient = client;
-        if (actionScriptServices != null)
-        {
+        if (actionScriptServices != null) {
             actionScriptServices.setLanguageClient(languageClient);
         }
     }
@@ -262,8 +223,7 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
      * Passes in a set of functions to communicate with VSCode.
      */
     @Override
-    public void connect(LanguageClient client)
-    {
+    public void connect(LanguageClient client) {
         connect((ActionScriptLanguageClient) client);
     }
 
@@ -272,21 +232,16 @@ public class ActionScriptLanguageServer implements LanguageServer, LanguageClien
      * its JAR file is located on the file system, and then we can find the
      * frameworks directory.
      */
-    private String findFrameworksPath()
-    {
-        try
-        {
+    private String findFrameworksPath() {
+        try {
             URI uri = IASNode.class.getProtectionDomain().getCodeSource().getLocation().toURI();
             String path = Paths.get(uri.resolve(FRAMEWORKS_RELATIVE_PATH_PARENT)).normalize().toString();
             File file = new File(path);
-            if (file.exists() && file.isDirectory())
-            {
+            if (file.exists() && file.isDirectory()) {
                 return path;
             }
             return null;
-        }
-        catch (Exception e)
-        {
+        } catch (Exception e) {
             return null;
         }
     }

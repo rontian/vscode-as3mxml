@@ -13,21 +13,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-import * as vscode from "vscode";
+package com.as3mxml.asconfigc.compiler;
 
-let savedPassword = null;
-
-export default async function saveSessionPassword(): Promise<string> {
-  do {
-    savedPassword = await vscode.window.showInputBox({
-      placeHolder: "Password",
-      prompt: "Save your password for current session",
-      value: savedPassword,
-      password: true,
-    });
-    if (savedPassword === undefined) {
-      break;
-    }
-  } while (!savedPassword);
-  return Promise.resolve(savedPassword);
+public class ModuleFields {
+	public static final String FILE = "file";
+	public static final String OPTIMIZE = "optimize";
+	public static final String OUTPUT = "output";
 }

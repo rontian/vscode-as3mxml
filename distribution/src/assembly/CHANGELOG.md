@@ -1,5 +1,60 @@
 # ActionScript & MXML for Visual Studio Code Changelog
 
+## v1.5.0
+
+### New Features
+
+- Build: The `additionalOptions` field in _asconfig.json_ files may optionally be specified as an array of strings, instead of a single string.
+- Settings: A new `as3mxml.languageServer.concurrentRequests` setting may be set to `false` to disable spawning a thread for each request to the ActionScript & MXML code intelligence. This may result in a more stable environment, in some cases.
+- Views: The ActionScript Source Paths view now displays source paths for all open projects (not just the first).
+
+### Fixed Issues
+
+- General: Fixed issue where source files on case-insensitive file systems might not be associated with the correct project, resulting in limited code intelligence.
+- Problems: Fixed issue where some errors were not displayed if certain compiler options were misconfigured.
+
+## v1.4.0
+
+### New Features
+
+- Build: Support for compiling Apache Flex modules.
+- Project Import: Modules in Adobe Flash Builder projects are now included.
+
+### Fixed Issues
+
+- Build: Further reduce command line options generated when adding folders to an Adobe AIR application. In some cases, it would make the command too long and the build would fail.
+- Build: Add missing action to unpackage Adobe AIR native extensions for debugging when compiling with Adobe Animate.
+- Completion: Fix location of added imports in MXML `<fx:Script>` tags when CDATA is missing.
+
+## v1.3.0
+
+### New Features
+
+- Projects: Multiple projects in a single workspace folder. If a workspace folder contains additional _asconfig.json_ files in sub-folders, these will be detected as separate projects. Perfect for projects containing tests and for quickly opening a shared parent folder without manually adding each project as a separate workspace folder.
+
+### Fixed Issues
+
+- Build: Quick compile commands no longer print incorrect "pending" message before initialization when no _asconfig.json_ files are detected.
+- General: Fix warning in output console that referenced a _vscode-userdata:_ URI.
+- Hover: fix formatting of constructor names to look like `ClassName.com.example.ClassName`.
+- Hover: fix missing ASDoc documentation when hovering over symbols in _.mxml_ files.
+
+### Other changes
+
+- General: The ActionScript SDK status bar item is visible only when the active editor contains an _.as_, _.mxml_ or _asconfig.json_ file. This better matches how the TypeScript version status bar item behaves.
+
+## v1.2.2
+
+### Fixed Issues
+
+- Build: Hide Java icon from dock on macOS.
+- Code Actions: Fix null exception for errors/warnings that don't have a code.
+- Definition: Go to definition works for symbols from _.ane_ files (showing a decompiled stub, similar to _.swc_ files).
+- Problems: Fix null exception on file change when real-time problems are disabled.
+- Problems: Fix issue where problems might not be cleared for deleted files.
+- Tasks: Fix exception when searching for Adobe Animate on Windows, and no Adobe software is installed.
+- Tasks: Fix error _The task provider for "actionscript" tasks unexpectedly provided a task of type "animate"._
+
 ## v1.2.1
 
 ### Fixed Issues

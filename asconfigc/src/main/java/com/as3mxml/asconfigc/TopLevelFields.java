@@ -15,8 +15,7 @@ limitations under the License.
 */
 package com.as3mxml.asconfigc;
 
-public class TopLevelFields
-{
+public class TopLevelFields {
 	public static final String TYPE = "type";
 	public static final String CONFIG = "config";
 	public static final String COMPILER_OPTIONS = "compilerOptions";
@@ -29,4 +28,5 @@ public class TopLevelFields
 	public static final String ANIMATE_OPTIONS = "animateOptions";
 	public static final String EXTENDS = "extends";
 	public static final String MAIN_CLASS = "mainClass";
+	public static final String MODULES = "modules";
 }

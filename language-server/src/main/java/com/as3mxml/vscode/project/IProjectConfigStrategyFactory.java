@@ -15,15 +15,27 @@ limitations under the License.
 */
 package com.as3mxml.vscode.project;
 
+import java.net.URI;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
 import org.eclipse.lsp4j.WorkspaceFolder;
 
 /**
  * Creates an IProjectConfigStrategy
  */
-public interface IProjectConfigStrategyFactory
-{
+public interface IProjectConfigStrategyFactory {
+    @Deprecated
     /**
-     * The project's workspace folder.
+     * Create a project config strategy for a workspace folder.
      */
-    IProjectConfigStrategy create(WorkspaceFolder workspaceFolder);
+    default IProjectConfigStrategy create(WorkspaceFolder workspaceFolder) {
+        Path projectPath = Paths.get(URI.create(workspaceFolder.getUri()));
+        return create(projectPath, workspaceFolder);
+    }
+
+    /**
+     * Create a project config strategy for a path inside a workspace folder.
+     */
+    IProjectConfigStrategy create(Path projectPath, WorkspaceFolder workspaceFolder);
 }

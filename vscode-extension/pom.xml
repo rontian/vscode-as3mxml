@@ -22,7 +22,7 @@ limitations under the License.
   <parent>
     <groupId>com.as3mxml.vscode</groupId>
     <artifactId>vscode-as3mxml</artifactId>
-    <version>1.2.1</version>
+    <version>1.5.0</version>
   </parent>
 
   <groupId>com.as3mxml.vscode</groupId>
@@ -65,13 +65,13 @@ limitations under the License.
         <artifactId>exec-maven-plugin</artifactId>
         <executions>
           <execution>
-            <id>exec-npm-install</id>
+            <id>exec-npm-ci</id>
             <phase>generate-sources</phase>
             <configuration>
               <workingDirectory>${project.basedir}</workingDirectory>
               <executable>${npm.executable}</executable>
               <arguments>
-                <argument>install</argument>
+                <argument>ci</argument>
               </arguments>
             </configuration>
             <goals>

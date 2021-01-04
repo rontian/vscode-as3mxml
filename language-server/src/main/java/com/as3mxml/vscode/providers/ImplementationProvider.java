@@ -22,13 +22,13 @@ import java.util.Collections;
 import java.util.List;
 
 import com.as3mxml.vscode.project.ILspProject;
-import com.as3mxml.vscode.project.WorkspaceFolderData;
+import com.as3mxml.vscode.project.ActionScriptProjectData;
 import com.as3mxml.vscode.utils.CompilationUnitUtils.IncludeFileData;
 import com.as3mxml.vscode.utils.DefinitionUtils;
 import com.as3mxml.vscode.utils.FileTracker;
 import com.as3mxml.vscode.utils.LanguageServerCompilerUtils;
 import com.as3mxml.vscode.utils.MXMLDataUtils;
-import com.as3mxml.vscode.utils.WorkspaceFolderManager;
+import com.as3mxml.vscode.utils.ActionScriptProjectManager;
 
 import org.apache.royale.compiler.definitions.IClassDefinition;
 import org.apache.royale.compiler.definitions.IDefinition;
@@ -47,129 +47,120 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-public class ImplementationProvider
-{
+public class ImplementationProvider {
     private static final String FILE_EXTENSION_MXML = ".mxml";
 
-    private WorkspaceFolderManager workspaceFolderManager;
+    private ActionScriptProjectManager actionScriptProjectManager;
     private FileTracker fileTracker;
 
-	public ImplementationProvider(WorkspaceFolderManager workspaceFolderManager, FileTracker fileTracker)
-	{
-        this.workspaceFolderManager = workspaceFolderManager;
+    public ImplementationProvider(ActionScriptProjectManager actionScriptProjectManager, FileTracker fileTracker) {
+        this.actionScriptProjectManager = actionScriptProjectManager;
         this.fileTracker = fileTracker;
-	}
+    }
 
-	public Either<List<? extends Location>, List<? extends LocationLink>> implementation(ImplementationParams params, CancelChecker cancelToken)
-	{
-		cancelToken.checkCanceled();
-		TextDocumentIdentifier textDocument = params.getTextDocument();
-		Position position = params.getPosition();
-		Path path = LanguageServerCompilerUtils.getPathFromLanguageServerURI(textDocument.getUri());
-		if (path == null)
-		{
-			cancelToken.checkCanceled();
-			return Either.forLeft(Collections.emptyList());
-		}
-		WorkspaceFolderData folderData = workspaceFolderManager.getWorkspaceFolderDataForSourceFile(path);
-		if(folderData == null || folderData.project == null)
-		{
-			cancelToken.checkCanceled();
-			return Either.forLeft(Collections.emptyList());
-		}
-		ILspProject project = folderData.project;
+    public Either<List<? extends Location>, List<? extends LocationLink>> implementation(ImplementationParams params,
+            CancelChecker cancelToken) {
+        if (cancelToken != null) {
+            cancelToken.checkCanceled();
+        }
+        TextDocumentIdentifier textDocument = params.getTextDocument();
+        Position position = params.getPosition();
+        Path path = LanguageServerCompilerUtils.getPathFromLanguageServerURI(textDocument.getUri());
+        if (path == null) {
+            if (cancelToken != null) {
+                cancelToken.checkCanceled();
+            }
+            return Either.forLeft(Collections.emptyList());
+        }
+        ActionScriptProjectData projectData = actionScriptProjectManager.getProjectDataForSourceFile(path);
+        if (projectData == null || projectData.project == null) {
+            if (cancelToken != null) {
+                cancelToken.checkCanceled();
+            }
+            return Either.forLeft(Collections.emptyList());
+        }
+        ILspProject project = projectData.project;
 
-        IncludeFileData includeFileData = folderData.includedFiles.get(path.toString());
-		int currentOffset = LanguageServerCompilerUtils.getOffsetFromPosition(fileTracker.getReader(path), position, includeFileData);
-		if (currentOffset == -1)
-		{
-			cancelToken.checkCanceled();
-			return Either.forLeft(Collections.emptyList());
-		}
+        IncludeFileData includeFileData = projectData.includedFiles.get(path.toString());
+        int currentOffset = LanguageServerCompilerUtils.getOffsetFromPosition(fileTracker.getReader(path), position,
+                includeFileData);
+        if (currentOffset == -1) {
+            if (cancelToken != null) {
+                cancelToken.checkCanceled();
+            }
+            return Either.forLeft(Collections.emptyList());
+        }
         boolean isMXML = textDocument.getUri().endsWith(FILE_EXTENSION_MXML);
-        if (isMXML)
-        {
-            MXMLData mxmlData = workspaceFolderManager.getMXMLDataForPath(path, folderData);
+        if (isMXML) {
+            MXMLData mxmlData = actionScriptProjectManager.getMXMLDataForPath(path, projectData);
             IMXMLTagData offsetTag = MXMLDataUtils.getOffsetMXMLTag(mxmlData, currentOffset);
-            if (offsetTag != null)
-            {
-                IASNode embeddedNode = workspaceFolderManager.getEmbeddedActionScriptNodeInMXMLTag(offsetTag, path, currentOffset, folderData);
-                if (embeddedNode != null)
-                {
+            if (offsetTag != null) {
+                IASNode embeddedNode = actionScriptProjectManager.getEmbeddedActionScriptNodeInMXMLTag(offsetTag, path,
+                        currentOffset, projectData);
+                if (embeddedNode != null) {
                     List<? extends Location> result = actionScriptImplementation(embeddedNode, project);
-                    cancelToken.checkCanceled();
+                    if (cancelToken != null) {
+                        cancelToken.checkCanceled();
+                    }
                     return Either.forLeft(result);
                 }
             }
         }
-		IASNode offsetNode = workspaceFolderManager.getOffsetNode(path, currentOffset, folderData);
-		List<? extends Location> result = actionScriptImplementation(offsetNode, project);
-		cancelToken.checkCanceled();
-		return Either.forLeft(result);
-	}
+        IASNode offsetNode = actionScriptProjectManager.getOffsetNode(path, currentOffset, projectData);
+        List<? extends Location> result = actionScriptImplementation(offsetNode, project);
+        if (cancelToken != null) {
+            cancelToken.checkCanceled();
+        }
+        return Either.forLeft(result);
+    }
 
-    private List<? extends Location> actionScriptImplementation(IASNode offsetNode, ILspProject project)
-    {
-        if (offsetNode == null)
-        {
+    private List<? extends Location> actionScriptImplementation(IASNode offsetNode, ILspProject project) {
+        if (offsetNode == null) {
             //we couldn't find a node at the specified location
             return Collections.emptyList();
         }
 
         IInterfaceDefinition interfaceDefinition = null;
 
-        if (offsetNode instanceof IIdentifierNode)
-        {
+        if (offsetNode instanceof IIdentifierNode) {
             IIdentifierNode expressionNode = (IIdentifierNode) offsetNode;
             IDefinition resolvedDefinition = expressionNode.resolve(project);
-            if (resolvedDefinition instanceof IInterfaceDefinition)
-            {
+            if (resolvedDefinition instanceof IInterfaceDefinition) {
                 interfaceDefinition = (IInterfaceDefinition) resolvedDefinition;
             }
         }
 
-        if (interfaceDefinition == null)
-        {
+        if (interfaceDefinition == null) {
             //VSCode may call typeDefinition() when there isn't necessarily a
             //type definition referenced at the current position.
             return Collections.emptyList();
         }
-        
+
         List<Location> result = new ArrayList<>();
-        for (ICompilationUnit unit : project.getCompilationUnits())
-        {
-            if (unit == null)
-            {
+        for (ICompilationUnit unit : project.getCompilationUnits()) {
+            if (unit == null) {
                 continue;
             }
             UnitType unitType = unit.getCompilationUnitType();
-            if (!UnitType.AS_UNIT.equals(unitType) && !UnitType.MXML_UNIT.equals(unitType))
-            {
+            if (!UnitType.AS_UNIT.equals(unitType) && !UnitType.MXML_UNIT.equals(unitType)) {
                 continue;
             }
             Collection<IDefinition> definitions = null;
-            try
-            {
+            try {
                 definitions = unit.getFileScopeRequest().get().getExternallyVisibleDefinitions();
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
                 //safe to ignore
                 continue;
             }
 
-            for (IDefinition definition : definitions)
-            {
-                if (!(definition instanceof IClassDefinition))
-                {
+            for (IDefinition definition : definitions) {
+                if (!(definition instanceof IClassDefinition)) {
                     continue;
                 }
                 IClassDefinition classDefinition = (IClassDefinition) definition;
-                if (DefinitionUtils.isImplementationOfInterface(classDefinition, interfaceDefinition, project))
-                {
-                    Location location = workspaceFolderManager.getLocationFromDefinition(classDefinition, project);
-                    if (location != null)
-                    {
+                if (DefinitionUtils.isImplementationOfInterface(classDefinition, interfaceDefinition, project)) {
+                    Location location = actionScriptProjectManager.getLocationFromDefinition(classDefinition, project);
+                    if (location != null) {
                         result.add(location);
                     }
                 }

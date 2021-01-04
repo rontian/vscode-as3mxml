@@ -22,8 +22,7 @@ import java.util.List;
  * Defines constants for all top-level fields of an asconfig.json file, and
  * stores the parsed values for those fields. 
  */
-public class ProjectOptions
-{
+public class ProjectOptions {
     public String type;
     public String config;
 
@@ -34,19 +33,15 @@ public class ProjectOptions
      */
     public String[] files;
     public List<String> compilerOptions;
-    public String additionalOptions;
+    public List<String> additionalOptions;
 
     //while the following values are also included in the compiler options,
     //we need them available for other things in the language server
     public List<String> targets;
 
-    public boolean equals(ProjectOptions other)
-    {
-        return other.type.equals(type)
-                && other.config.equals(config)
-                && Arrays.equals(other.files, files)
-                && other.compilerOptions.equals(compilerOptions)
-                && other.additionalOptions.equals(additionalOptions)
+    public boolean equals(ProjectOptions other) {
+        return other.type.equals(type) && other.config.equals(config) && Arrays.equals(other.files, files)
+                && other.compilerOptions.equals(compilerOptions) && other.additionalOptions.equals(additionalOptions)
                 && other.targets.equals(targets);
     }
 }
