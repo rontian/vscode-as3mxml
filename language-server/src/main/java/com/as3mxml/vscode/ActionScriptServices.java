@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2020 Bowler Hat LLC
+Copyright 2016-2021 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -285,6 +285,14 @@ public class ActionScriptServices implements TextDocumentService, WorkspaceServi
             realTimeProblemsFuture.cancel(true);
             realTimeProblemsFuture = null;
         }
+    }
+
+    public List<ActionScriptProjectData> getProjects() {
+        return actionScriptProjectManager.getAllProjectData();
+    }
+
+    public ActionScriptProjectData getFallbackProject() {
+        return actionScriptProjectManager.getFallbackProjectData();
     }
 
     /**

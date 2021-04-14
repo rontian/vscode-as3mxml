@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2020 Bowler Hat LLC
+Copyright 2016-2021 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ async function quickCompileAndLaunchURI(uri: string, debug: boolean) {
     { location: vscode.ProgressLocation.Window },
     (progress) => {
       progress.report({ message: QUICK_COMPILE_MESSAGE });
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         return vscode.commands
           .executeCommand("workbench.action.debug.stop")
           .then(() => {

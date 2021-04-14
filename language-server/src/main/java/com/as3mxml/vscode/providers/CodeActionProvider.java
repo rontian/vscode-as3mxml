@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2020 Bowler Hat LLC
+Copyright 2016-2021 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -613,8 +613,9 @@ public class CodeActionProvider {
         IIdentifierNode identifierNode = (IIdentifierNode) offsetNode;
         String typeString = identifierNode.getName();
 
-        List<IDefinition> types = ASTUtils.findTypesThatMatchName(typeString, project.getCompilationUnits());
-        for (IDefinition definitionToImport : types) {
+        List<IDefinition> definitions = ASTUtils.findDefinitionsThatMatchName(typeString, false,
+                project.getCompilationUnits());
+        for (IDefinition definitionToImport : definitions) {
             WorkspaceEdit edit = CodeActionsUtils.createWorkspaceEditForAddImport(definitionToImport, fileText, uri,
                     importRange);
             if (edit == null) {

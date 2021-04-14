@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2020 Bowler Hat LLC
+Copyright 2016-2021 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,8 @@ const FILE_NAME_ASCONFIG_JSON = "asconfig.json";
 
 const MESSAGE_DETECT_PROJECT =
   "Import existing ActionScript & MXML projects from Adobe Flash Builder or FlashDevelop?";
-const MESSAGE_DETECT_PROJECT2 = "Import more Adobe Flash Builder projects?";
+const MESSAGE_DETECT_PROJECT2 =
+  "Import more projects from Adobe Flash Builder or FlashDevelop?";
 const MESSAGE_CHOOSE_PROJECT = "Choose a project to import";
 const MESSAGE_CHOOSE_FORMAT = "Choose the format of the project to import.";
 const ERROR_PROJECT_HAS_ASCONFIG =
@@ -75,7 +76,11 @@ async function promptToImportWorkspaceFolders(
     if (value == BUTTON_LABEL_NO_IMPORT) {
       break;
     }
-    let importedFolder = await pickProjectInWorkspaceFolders(workspaceFolders);
+    let importedFolder = await pickProjectInWorkspaceFolders(
+      workspaceFolders,
+      true,
+      true
+    );
     if (!importedFolder) {
       break;
     }
@@ -87,10 +92,16 @@ async function promptToImportWorkspaceFolders(
 }
 
 async function pickProjectInWorkspaceFolders(
-  workspaceFolders: vscode.WorkspaceFolder[]
+  workspaceFolders: readonly vscode.WorkspaceFolder[],
+  allowFlashBuilder: boolean,
+  allowFlashDevelop: boolean
 ) {
   if (workspaceFolders.length === 1) {
-    return await importProjectInWorkspaceFolder(workspaceFolders[0]);
+    return await importProjectInWorkspaceFolder(
+      workspaceFolders[0],
+      allowFlashBuilder,
+      allowFlashDevelop
+    );
   } else {
     let items = workspaceFolders.map((folder) => {
       return { label: folder.name, description: folder.uri.fsPath, folder };
@@ -102,15 +113,23 @@ async function pickProjectInWorkspaceFolders(
       //it's possible for no format to be chosen with showQuickPick()
       return null;
     }
-    return await importProjectInWorkspaceFolder(result.folder);
+    return await importProjectInWorkspaceFolder(
+      result.folder,
+      allowFlashBuilder,
+      allowFlashDevelop
+    );
   }
 }
 
 async function importProjectInWorkspaceFolder(
-  workspaceFolder: vscode.WorkspaceFolder
+  workspaceFolder: vscode.WorkspaceFolder,
+  allowFlashBuilder: boolean,
+  allowFlashDevelop: boolean
 ) {
-  let isFlashBuilder = fbImport.isFlashBuilderProject(workspaceFolder);
-  let isFlashDevelop = fdImport.isFlashDevelopProject(workspaceFolder);
+  let isFlashBuilder =
+    allowFlashBuilder && fbImport.isFlashBuilderProject(workspaceFolder);
+  let isFlashDevelop =
+    allowFlashDevelop && fdImport.isFlashDevelopProject(workspaceFolder);
   if (isFlashBuilder && isFlashDevelop) {
     let result = await vscode.window.showQuickPick(
       [
@@ -122,9 +141,11 @@ async function importProjectInWorkspaceFolder(
     switch (result.label) {
       case BUTTON_LABEL_FLASH_BUILDER: {
         isFlashDevelop = false;
+        break;
       }
       case BUTTON_LABEL_FLASH_DEVELOP: {
         isFlashBuilder = false;
+        break;
       }
       default: {
         //it's possible for no format to be chosen with showQuickPick()
@@ -156,26 +177,26 @@ function notifyNoProjectsToImport(
 }
 
 export function pickProjectInWorkspace(
-  flashBuilder: boolean,
-  flashDevelop: boolean
+  allowFlashBuilder: boolean,
+  allowFlashDevelop: boolean
 ) {
   let workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders) {
-    notifyNoProjectsToImport(flashBuilder, flashDevelop);
+    notifyNoProjectsToImport(allowFlashBuilder, allowFlashDevelop);
     return;
   }
 
   workspaceFolders = workspaceFolders.filter((folder) => {
-    if (flashBuilder && fbImport.isFlashBuilderProject(folder)) {
+    if (allowFlashBuilder && fbImport.isFlashBuilderProject(folder)) {
       return true;
     }
-    if (flashDevelop && fdImport.isFlashDevelopProject(folder)) {
+    if (allowFlashDevelop && fdImport.isFlashDevelopProject(folder)) {
       return true;
     }
     return false;
   });
   if (workspaceFolders.length === 0) {
-    notifyNoProjectsToImport(flashBuilder, flashDevelop);
+    notifyNoProjectsToImport(allowFlashBuilder, allowFlashDevelop);
     return;
   }
 
@@ -187,7 +208,11 @@ export function pickProjectInWorkspace(
     return;
   }
 
-  pickProjectInWorkspaceFolders(workspaceFolders);
+  pickProjectInWorkspaceFolders(
+    workspaceFolders,
+    allowFlashBuilder,
+    allowFlashDevelop
+  );
 }
 
 function isVSCodeProject(folder: vscode.WorkspaceFolder) {

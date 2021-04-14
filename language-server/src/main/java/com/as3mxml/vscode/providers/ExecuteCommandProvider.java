@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2020 Bowler Hat LLC
+Copyright 2016-2021 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -319,10 +319,10 @@ public class ExecuteCommandProvider {
             importsToAdd = new HashSet<>();
             Collection<ICompilationUnit> units = project.getCompilationUnits();
             for (String missingName : missingNames) {
-                List<IDefinition> types = ASTUtils.findTypesThatMatchName(missingName, units);
-                if (types.size() == 1) {
+                List<IDefinition> definitions = ASTUtils.findDefinitionsThatMatchName(missingName, false, units);
+                if (definitions.size() == 1) {
                     //add an import only if exactly one type is found
-                    importsToAdd.add(types.get(0).getQualifiedName());
+                    importsToAdd.add(definitions.get(0).getQualifiedName());
                 }
             }
         }

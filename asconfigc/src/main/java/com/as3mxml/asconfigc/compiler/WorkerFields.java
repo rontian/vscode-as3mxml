@@ -13,20 +13,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package com.as3mxml.vscode.compiler.problems;
+package com.as3mxml.asconfigc.compiler;
 
-import org.apache.royale.compiler.problems.CompilerProblem;
-
-public class LSPFileNotFoundProblem extends CompilerProblem {
-    public static String DESCRIPTION = "File not found: ${file}";
-
-    public static final int errorCode = 1457;
-
-    public LSPFileNotFoundProblem(String filePath, String sourcePath) {
-        super(sourcePath != null ? sourcePath : filePath);
-        file = filePath;
-    }
-
-    /// Path to the file that was not found.
-    public final String file;
+public class WorkerFields {
+	public static final String FILE = "file";
+	public static final String OUTPUT = "output";
 }

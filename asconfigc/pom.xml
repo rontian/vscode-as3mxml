@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-Copyright 2016-2020 Bowler Hat LLC
+Copyright 2016-2021 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ limitations under the License.
   <parent>
     <groupId>com.as3mxml.vscode</groupId>
     <artifactId>vscode-as3mxml</artifactId>
-    <version>1.5.0</version>
+    <version>1.6.0</version>
   </parent>
 
   <groupId>com.as3mxml.vscode</groupId>
@@ -108,7 +108,7 @@ limitations under the License.
     <dependency>
       <groupId>com.networknt</groupId>
       <artifactId>json-schema-validator</artifactId>
-      <version>0.1.19</version>
+      <version>1.0.47</version>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
