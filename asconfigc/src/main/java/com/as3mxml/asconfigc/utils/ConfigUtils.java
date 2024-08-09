@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,28 +40,72 @@ public class ConfigUtils {
 	private static final String FILE_EXTENSION_MXML = ".mxml";
 
 	public static String resolveMainClass(String mainClass, List<String> sourcePaths) {
+		return resolveMainClass(mainClass, sourcePaths, null);
+	}
+
+	public static String resolveMainClass(String mainClass, List<String> sourcePaths, String rootWorkspacePath) {
 		String mainClassBasePath = mainClass.replace(".", File.separator);
 		if (sourcePaths != null) {
 			for (String sourcePath : sourcePaths) {
 				Path sourcePathPath = Paths.get(sourcePath);
-				Path mainClassPath = sourcePathPath.resolve(mainClassBasePath + FILE_EXTENSION_AS);
-				if (mainClassPath.toFile().exists()) {
-					return mainClassPath.toString();
+				Path mainClassPathAS = sourcePathPath.resolve(mainClassBasePath + FILE_EXTENSION_AS);
+				Path absoluteMainClassPathAS = mainClassPathAS;
+				if (!absoluteMainClassPathAS.isAbsolute() && rootWorkspacePath != null) {
+					absoluteMainClassPathAS = Paths.get(rootWorkspacePath).resolve(absoluteMainClassPathAS);
 				}
-				mainClassPath = sourcePathPath.resolve(mainClassBasePath + FILE_EXTENSION_MXML);
-				if (mainClassPath.toFile().exists()) {
-					return mainClassPath.toString();
+				if (absoluteMainClassPathAS.toFile().exists()) {
+					// verify that the absolute path exists, but return the
+					// relative path instead.
+					// this keeps the compile command smaller, but it also
+					// reduces the possibility of spaces appearing in the
+					// compile command options.
+					// FCSH doesn't like paths with spaces.
+					// see BowlerHatLLC/vscode-as3mxml#726
+					return mainClassPathAS.toString();
+				}
+				Path mainClassPathMXML = sourcePathPath.resolve(mainClassBasePath + FILE_EXTENSION_MXML);
+				Path absoluteMainClassPathMXML = mainClassPathMXML;
+				if (!absoluteMainClassPathMXML.isAbsolute() && rootWorkspacePath != null) {
+					absoluteMainClassPathMXML = Paths.get(rootWorkspacePath).resolve(absoluteMainClassPathMXML);
+				}
+				if (absoluteMainClassPathMXML.toFile().exists()) {
+					// verify that the absolute path exists, but return the
+					// relative path instead. see note above.
+					return mainClassPathMXML.toString();
 				}
 			}
+		} else {
+			// no source paths, so assume the root of the project (which is the
+			// same directory as asconfig.json)
+			Path mainClassPathAS = Paths.get(mainClassBasePath + FILE_EXTENSION_AS);
+			Path absoluteMainClassPathAS = mainClassPathAS;
+			if (!absoluteMainClassPathAS.isAbsolute() && rootWorkspacePath != null) {
+				absoluteMainClassPathAS = Paths.get(rootWorkspacePath).resolve(absoluteMainClassPathAS);
+			}
+			if (absoluteMainClassPathAS.toFile().exists()) {
+				// verify that the absolute path exists, but return the relative
+				// path instead. see note above.
+				return mainClassPathAS.toString();
+			}
+			Path mainClassPathMXML = Paths.get(mainClassBasePath + FILE_EXTENSION_MXML);
+			Path absoluteMainClassPathMXML = mainClassPathMXML;
+			if (!absoluteMainClassPathMXML.isAbsolute() && rootWorkspacePath != null) {
+				absoluteMainClassPathMXML = Paths.get(rootWorkspacePath).resolve(absoluteMainClassPathMXML);
+			}
+			if (absoluteMainClassPathMXML.toFile().exists()) {
+				// verify that the absolute path exists, but return the relative
+				// path instead. see note above.
+				return mainClassPathMXML.toString();
+			}
 		}
-		//as a final fallback, try in the current working directory
-		Path mainClassPath = Paths.get(mainClassBasePath + FILE_EXTENSION_AS);
-		if (mainClassPath.toFile().exists()) {
-			return mainClassPath.toString();
+		// as a final fallback, try in the current working directory
+		Path mainClassPathAS = Paths.get(mainClassBasePath + FILE_EXTENSION_AS);
+		if (mainClassPathAS.toFile().exists()) {
+			return mainClassPathAS.toString();
 		}
-		mainClassPath = Paths.get(mainClassBasePath + FILE_EXTENSION_MXML);
-		if (mainClassPath.toFile().exists()) {
-			return mainClassPath.toString();
+		Path mainClassPathMXML = Paths.get(mainClassBasePath + FILE_EXTENSION_MXML);
+		if (mainClassPathMXML.toFile().exists()) {
+			return mainClassPathMXML.toString();
 		}
 		return null;
 	}
@@ -84,7 +128,7 @@ public class ConfigUtils {
 
 		allFieldNames.forEach(fieldName -> {
 			if (TopLevelFields.EXTENDS.equals(fieldName)) {
-				//safe to skip
+				// safe to skip
 				return;
 			}
 			boolean hasField = configData.has(fieldName);
@@ -301,11 +345,11 @@ public class ConfigUtils {
 		boolean hasDebug = signingOptions.has(AIRSigningOptions.DEBUG);
 		boolean hasRelease = signingOptions.has(AIRSigningOptions.RELEASE);
 		if (!hasDebug && !hasRelease) {
-			//nothing to merge. fully overrides the base
+			// nothing to merge. fully overrides the base
 			return signingOptions;
 		}
 		if (hasDebug && hasRelease) {
-			//fully overrides the base
+			// fully overrides the base
 			return signingOptions;
 		}
 
@@ -319,7 +363,7 @@ public class ConfigUtils {
 			result.set(AIRSigningOptions.DEBUG, signingOptions.get(AIRSigningOptions.DEBUG));
 		} else if (baseHasDebug) {
 			result.set(AIRSigningOptions.DEBUG, baseSigningOptions.get(AIRSigningOptions.DEBUG));
-		} else if (!baseHasRelease) //neither debug nor release
+		} else if (!baseHasRelease) // neither debug nor release
 		{
 			result.set(AIRSigningOptions.DEBUG, baseSigningOptions);
 		}
@@ -328,7 +372,7 @@ public class ConfigUtils {
 			result.set(AIRSigningOptions.RELEASE, signingOptions.get(AIRSigningOptions.RELEASE));
 		} else if (baseHasRelease) {
 			result.set(AIRSigningOptions.RELEASE, baseSigningOptions.get(AIRSigningOptions.RELEASE));
-		} else if (!baseHasDebug) //neither debug nor release
+		} else if (!baseHasDebug) // neither debug nor release
 		{
 			result.set(AIRSigningOptions.RELEASE, baseSigningOptions);
 		}

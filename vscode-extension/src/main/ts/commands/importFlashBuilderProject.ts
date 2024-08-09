@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ limitations under the License.
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import parseXML = require("@rgrove/parse-xml");
+import { parseXml } from "@rgrove/parse-xml";
 import validateFrameworkSDK from "../utils/validateFrameworkSDK";
 
 const FILE_ASCONFIG_JSON = "asconfig.json";
@@ -80,7 +80,7 @@ export function importFlashBuilderProject(
 ) {
   getOutputChannel().clear();
   getOutputChannel().appendLine(MESSAGE_IMPORT_START);
-  getOutputChannel().show();
+  getOutputChannel().show(true);
   let result = importFlashBuilderProjectInternal(workspaceFolder);
   if (result) {
     getOutputChannel().appendLine(MESSAGE_IMPORT_COMPLETE);
@@ -182,7 +182,7 @@ function findSDKs(workspaceFolder: vscode.WorkspaceFolder): FlashBuilderSDK[] {
     sdkPrefsText = sdkPrefsText.replace(/\\(.)/g, (match, p1) => {
       return p1;
     });
-    sdksElement = parseXML(sdkPrefsText);
+    sdksElement = parseXml(sdkPrefsText);
   } catch (error) {
     return [];
   }
@@ -254,7 +254,7 @@ function importFlashBuilderProjectInternal(
   }
   let actionScriptProperties = null;
   try {
-    let parsedXML = parseXML(actionScriptPropertiesText);
+    let parsedXML = parseXml(actionScriptPropertiesText);
     actionScriptProperties = parsedXML.children[0];
   } catch (error) {
     addError(ERROR_XML_PARSE + actionScriptPropertiesPath);
@@ -418,7 +418,7 @@ function createProjectFiles(
       }
       let flexLibProperties = null;
       try {
-        let parsedXML = parseXML(flexLibPropertiesText);
+        let parsedXML = parseXml(flexLibPropertiesText);
         flexLibProperties = parsedXML.children[0];
       } catch (error) {
         addError(ERROR_PROJECT_PARSE);
@@ -989,9 +989,8 @@ function migrateBuildTargetsElement(
             linkedResources
           );
           platformOptions.signingOptions = platformOptions.signingOptions || {};
-          platformOptions.signingOptions[
-            "provisioning-profile"
-          ] = provisioningFile;
+          platformOptions.signingOptions["provisioning-profile"] =
+            provisioningFile;
         }
       }
     } else if (isAndroid) {

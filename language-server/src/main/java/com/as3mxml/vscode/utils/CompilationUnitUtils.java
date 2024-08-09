@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -66,13 +66,27 @@ public class CompilationUnitUtils {
 		}
 	}
 
+	public static String getPrimaryQualifiedName(ICompilationUnit unit) {
+		String qualifiedName = null;
+		List<String> qualifiedNames = null;
+		try {
+			qualifiedNames = unit.getQualifiedNames();
+		} catch (Exception e) {
+			// do nothing
+		}
+		if (qualifiedNames != null && qualifiedNames.size() > 0) {
+			qualifiedName = qualifiedNames.get(0);
+		}
+		return qualifiedName;
+	}
+
 	public static void findIncludedFiles(ICompilationUnit unit, Map<String, IncludeFileData> result) {
 		if (unit == null) {
 			return;
 		}
 		UnitType unitType = unit.getCompilationUnitType();
 		if (!UnitType.AS_UNIT.equals(unitType) && !UnitType.MXML_UNIT.equals(unitType)) {
-			//compiled compilation units won't have problems
+			// compiled compilation units won't have problems
 			return;
 		}
 		String path = unit.getAbsoluteFilename();
@@ -95,7 +109,7 @@ public class CompilationUnitUtils {
 				IncludeHandler includeHandler = fileNode.getIncludeHandler();
 				for (OffsetCue offsetCue : includeHandler.getOffsetCueList()) {
 					if (offsetCue.adjustment == 0 && offsetCue.local == 0 && offsetCue.absolute == 0) {
-						//ignore because this data isn't valid, for some reason
+						// ignore because this data isn't valid, for some reason
 						continue;
 					}
 					String filename = offsetCue.filename;
@@ -129,6 +143,9 @@ public class CompilationUnitUtils {
 				offsetLookup = fileScope.getOffsetLookup();
 			}
 		} catch (InterruptedException e) {
+			return;
+		}
+		if (offsetLookup == null) {
 			return;
 		}
 
@@ -165,7 +182,7 @@ public class CompilationUnitUtils {
 			} else {
 				String scriptSourceValue = sourceAttribute.getRawValue();
 				if (scriptSourceValue.length() == 0) {
-					//no file specified yet... it's empty!
+					// no file specified yet... it's empty!
 					continue;
 				}
 				Path scriptPath = Paths.get(sourceAttribute.getRawValue());
@@ -174,8 +191,8 @@ public class CompilationUnitUtils {
 					scriptPath = mxmlPath.getParent().resolve(scriptPath);
 				}
 				if (!scriptPath.toFile().exists()) {
-					//the file doesn't actually exist, and getAbsoluteOffset()
-					//will throw an exception if we call it
+					// the file doesn't actually exist, and getAbsoluteOffset()
+					// will throw an exception if we call it
 					continue;
 				}
 
@@ -205,7 +222,7 @@ public class CompilationUnitUtils {
 				} catch (FileNotFoundException e) {
 					continue;
 				} catch (IOException e) {
-					//just ignore it
+					// just ignore it
 				}
 
 				if (scriptLength == 0) {

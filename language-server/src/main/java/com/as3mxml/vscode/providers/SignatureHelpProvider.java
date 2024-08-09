@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -118,7 +118,7 @@ public class SignatureHelpProvider {
 			if (cancelToken != null) {
 				cancelToken.checkCanceled();
 			}
-			//we couldn't find a node at the specified location
+			// we couldn't find a node at the specified location
 			return new SignatureHelp(Collections.emptyList(), -1, -1);
 		}
 
@@ -133,7 +133,7 @@ public class SignatureHelpProvider {
 				IClassDefinition classDefinition = (IClassDefinition) definition;
 				functionDefinition = classDefinition.getConstructor();
 			} else if (nameNode instanceof IIdentifierNode) {
-				//special case for super()
+				// special case for super()
 				IIdentifierNode identifierNode = (IIdentifierNode) nameNode;
 				if (identifierNode.getName().equals(IASKeywordConstants.SUPER)) {
 					ITypeDefinition typeDefinition = nameNode.resolveType(project);
@@ -172,22 +172,22 @@ public class SignatureHelpProvider {
 			result.setSignatures(signatures);
 			result.setActiveSignature(0);
 
-			int index = ASTUtils.getFunctionCallNodeArgumentIndex(functionCallNode, offsetNode);
+			String fileText = fileTracker.getText(path);
+			int index = ASTUtils.getFunctionCallNodeArgumentIndex(functionCallNode, offsetNode, fileText,
+					currentOffset);
 			IParameterDefinition[] parameterDefs = functionDefinition.getParameters();
 			int paramCount = parameterDefs.length;
 			if (paramCount > 0 && index >= paramCount) {
-				if (index >= paramCount) {
-					IParameterDefinition lastParam = parameterDefs[paramCount - 1];
-					if (lastParam.isRest()) {
-						//functions with rest parameters may accept any
-						//number of arguments, so continue to make the rest
-						//parameter active
-						index = paramCount - 1;
-					} else {
-						//if there's no rest parameter, and we're beyond the
-						//final parameter, none should be active
-						index = -1;
-					}
+				IParameterDefinition lastParam = parameterDefs[paramCount - 1];
+				if (lastParam.isRest()) {
+					// functions with rest parameters may accept any
+					// number of arguments, so continue to make the rest
+					// parameter active
+					index = paramCount - 1;
+				} else {
+					// if there's no rest parameter, and we're beyond the
+					// final parameter, none should be active
+					index = -1;
 				}
 			}
 			if (index != -1) {

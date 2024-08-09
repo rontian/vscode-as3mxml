@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.as3mxml.vscode.utils;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -34,17 +34,21 @@ public class ImportTextEditUtils {
             .compile("(?m)^([ \\t]*)import ((\\w+\\.)+\\w+(\\.\\*)?);?");
     private static final Pattern packagePattern = Pattern
             .compile("(?m)^package(?: [\\w\\.]+)*\\s*\\{(?:[ \\t]*[\\r\\n]+)+([ \\t]*)");
+    private static final Pattern mxmlScriptPattern = Pattern
+            .compile(
+                    "(?m)<(?:[a-zA-Z]+:)?Script>\\s*<!\\[CDATA\\[[ \\t]*(\\r?\\n)(?:[ \\t]*[\\r\\n])*([ \\t]*(?![ \\t]))");
 
     protected static int organizeImportsFromStartIndex(String text, int startIndex, List<IImportNode> importsToRemove,
-            Set<String> importsToAdd, List<TextEdit> edits) {
+            Set<String> importsToAdd, boolean sortImports, boolean insertNewLineBetweenTopLevelPackages,
+            List<TextEdit> edits) {
         Matcher importMatcher = organizeImportPattern.matcher(text);
         if (startIndex != -1) {
             importMatcher.region(startIndex, text.length());
         }
-        //use a Set to avoid adding duplicate names
-        Set<String> nameSet = new HashSet<>();
+        // use a Set to avoid adding duplicate names
+        Set<String> nameSet = new LinkedHashSet<>();
         if (importsToAdd != null && startIndex == 0) {
-            //add our extra imports at the first available opportunity
+            // add our extra imports at the first available opportunity
             nameSet.addAll(importsToAdd);
         }
         String indent = "";
@@ -83,23 +87,34 @@ public class ImportTextEditUtils {
                 nameSet.add(importName);
             }
         }
-        if (nameSet.size() == 0 && importsToRemove.size() == 0) {
-            //nothing to organize
+        if (nameSet.size() == 0 && (importsToRemove == null || importsToRemove.size() == 0)) {
+            // nothing to organize
             return endIndex;
         }
 
         if (startImportsIndex == -1) {
             Matcher packageMatcher = packagePattern.matcher(text);
             packageMatcher.region(0, text.length());
-            if (packageMatcher.find()) //found the package
+            if (packageMatcher.find()) // found the package
             {
                 indent = packageMatcher.group(1);
                 startImportsIndex = packageMatcher.end() - indent.length();
             }
         }
-        //make the Set a List and put them in alphabetical order
+        if (startImportsIndex == -1) {
+            Matcher mxmlScriptMatcher = mxmlScriptPattern.matcher(text);
+            mxmlScriptMatcher.region(0, text.length());
+            if (mxmlScriptMatcher.find()) // found the package
+            {
+                startImportsIndex = mxmlScriptMatcher.end(1);
+                indent = mxmlScriptMatcher.group(2);
+            }
+        }
+        // make the Set a List and put them in alphabetical order
         List<String> names = new ArrayList<>(nameSet);
-        Collections.sort(names);
+        if (sortImports) {
+            Collections.sort(names);
+        }
         StringBuilder result = new StringBuilder();
         String previousFirstPart = null;
         for (int i = 0, count = names.size(); i < count; i++) {
@@ -108,9 +123,10 @@ public class ImportTextEditUtils {
             String firstPart = parts[0];
             if (previousFirstPart == null) {
                 previousFirstPart = firstPart;
-            } else if (parts.length > 1 && !firstPart.equals(previousFirstPart)) {
-                //add an extra line when the first part of the package name
-                //is different than the previous import
+            } else if (sortImports && insertNewLineBetweenTopLevelPackages && parts.length > 1
+                    && !firstPart.equals(previousFirstPart)) {
+                // add an extra line when the first part of the package name
+                // is different than the previous import
                 result.append("\n");
                 previousFirstPart = firstPart;
             }
@@ -126,7 +142,7 @@ public class ImportTextEditUtils {
         if (endImportsIndex == -1) {
             endImportsIndex = startImportsIndex;
             if (nameSet.size() > 0) {
-                //we're only adding new imports, so add some extra whitespace
+                // we're only adding new imports, so add some extra whitespace
                 result.append("\n\n");
             }
         }
@@ -140,16 +156,17 @@ public class ImportTextEditUtils {
         return endIndex;
     }
 
-    public static List<TextEdit> organizeImports(String text) {
-        return organizeImports(text, null, null);
+    public static List<TextEdit> organizeImports(String text, boolean insertNewLineBetweenTopLevelPackages) {
+        return organizeImports(text, null, null, true, insertNewLineBetweenTopLevelPackages);
     }
 
     public static List<TextEdit> organizeImports(String text, List<IImportNode> importsToRemove,
-            Set<String> importsToAdd) {
+            Set<String> importsToAdd, boolean sortImports, boolean insertNewLineBetweenTopLevelPackages) {
         List<TextEdit> edits = new ArrayList<>();
         int index = 0;
         do {
-            index = organizeImportsFromStartIndex(text, index, importsToRemove, importsToAdd, edits);
+            index = organizeImportsFromStartIndex(text, index, importsToRemove, importsToAdd,
+                    sortImports, insertNewLineBetweenTopLevelPackages, edits);
         } while (index != -1);
         return edits;
     }

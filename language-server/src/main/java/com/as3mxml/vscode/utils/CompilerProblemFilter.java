@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,11 +26,11 @@ public class CompilerProblemFilter {
 
 	public boolean isAllowed(ICompilerProblem problem) {
 		if (!royaleProblems) {
-			//the following errors get special treatment if the framework SDK's
-			//compiler isn't Falcon
+			// the following errors get special treatment if the framework SDK's
+			// compiler isn't Falcon
 
 			if (problem.getClass().equals(FontEmbeddingNotSupported.class)) {
-				//ignore this error because the framework SDK can embed fonts
+				// ignore this error because the framework SDK can embed fonts
 				return false;
 			}
 		}

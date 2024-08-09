@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@ limitations under the License.
 */
 import * as fs from "fs";
 import * as path from "path";
+import * as vscode from "vscode";
 
 /**
  * Checks if the path contains a valid SDK. May return a modified path, in the
@@ -41,6 +42,25 @@ function validatePossibleFrameworkSDK(sdkPath: string): boolean {
   if (!sdkPath) {
     return false;
   }
+
+  if (!path.isAbsolute(sdkPath)) {
+    if (vscode.workspace.workspaceFile !== undefined) {
+      sdkPath = path.join(
+        path.dirname(vscode.workspace.workspaceFile.fsPath),
+        sdkPath
+      );
+    } else {
+      if (vscode.workspace.workspaceFolders !== undefined) {
+        sdkPath = path.join(
+          vscode.workspace.workspaceFolders[0].uri.fsPath,
+          sdkPath
+        );
+      } else {
+        return false;
+      }
+    }
+  }
+
   //a frameworks directory is required
   let frameworksPath = path.join(sdkPath, "frameworks");
   if (

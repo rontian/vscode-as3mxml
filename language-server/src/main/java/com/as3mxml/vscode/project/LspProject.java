@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,6 +27,11 @@ import org.apache.royale.compiler.units.ICompilationUnit;
 public class LspProject extends RoyaleProject implements ILspProject {
 	public LspProject(Workspace workspace) {
 		super(workspace);
+		// using a custom handler to create compilation units for .as source
+		// files because the default ASCompilationUnit allows ASTs to be garbage
+		// collected, and the scopes can get out of sync.
+		// that's probably a Royale compiler bug, but a workaround is easier.
+		getSourceCompilationUnitFactory().addHandler(LspASSourceFileHandler.INSTANCE);
 	}
 
 	public Set<String> getQNamesOfDependencies(ICompilationUnit from) {

@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import * as path from "path";
 import findSDKName from "../utils/findSDKName";
 import validateFrameworkSDK from "../utils/validateFrameworkSDK";
 import findSDKInLocalRoyaleNodeModule from "../utils/findSDKInLocalRoyaleNodeModule";
-import findSDKInLocalFlexJSNodeModule from "../utils/findSDKInLocalFlexJSNodeModule";
 import findSDKInRoyaleHomeEnvironmentVariable from "../utils/findSDKInRoyaleHomeEnvironmentVariable";
 import findSDKInFlexHomeEnvironmentVariable from "../utils/findSDKInFlexHomeEnvironmentVariable";
 import findSDKsInPathEnvironmentVariable from "../utils/findSDKsInPathEnvironmentVariable";
@@ -71,7 +70,7 @@ function openSettingsForSearchPaths() {
     .then(
       (folders: vscode.Uri[] | undefined) => {
         if (folders === undefined || folders.length === 0) {
-          return;
+          return selectWorkspaceSDK();
         }
         let config = vscode.workspace.getConfiguration("as3mxml");
         let searchPaths: string[] = config.get("sdk.searchPaths");
@@ -104,6 +103,7 @@ function openSettingsForSearchPaths() {
             );
           }
         }
+        return selectWorkspaceSDK();
       },
       () => {
         return vscode.window.showErrorMessage(
@@ -175,7 +175,9 @@ function createSearchPathsItem(): SDKQuickPickItem {
   return item;
 }
 
-export default function selectWorkspaceSDK(): void {
+export default function selectWorkspaceSDK(
+  saveSDKPathToSettings: boolean = true
+): Thenable<vscode.Uri | undefined> {
   let allPaths: string[] = [];
   let items: SDKQuickPickItem[] = [];
   //for convenience, add an option to open user settings and define custom SDK paths
@@ -203,16 +205,6 @@ export default function selectWorkspaceSDK(): void {
   if (royaleNodeModuleSDK) {
     addSDKItem(
       royaleNodeModuleSDK,
-      DESCRIPTION_NODE_MODULE,
-      items,
-      allPaths,
-      true
-    );
-  }
-  let flexjsNodeModuleSDK = findSDKInLocalFlexJSNodeModule();
-  if (flexjsNodeModuleSDK) {
-    addSDKItem(
-      flexjsNodeModuleSDK,
       DESCRIPTION_NODE_MODULE,
       items,
       allPaths,
@@ -257,7 +249,7 @@ export default function selectWorkspaceSDK(): void {
   paths.forEach((sdkPath) => {
     addSDKItem(sdkPath, DESCRIPTION_PATH, items, allPaths, false);
   });
-  vscode.window
+  return vscode.window
     .showQuickPick(items, {
       placeHolder: "Select an ActionScript SDK for this workspace",
     })
@@ -265,27 +257,31 @@ export default function selectWorkspaceSDK(): void {
       (value: SDKQuickPickItem) => {
         if (!value) {
           //no new SDK was picked, so do nothing
-          return;
+          return Promise.resolve(undefined);
         }
         if (typeof value.custom !== "undefined") {
           //if the user chose to define a custom SDK, open workspace settings
           openSettingsForSearchPaths();
-          return;
+          return Promise.resolve(undefined);
         }
         //if they chose an SDK, save it to the settings
         let newFrameworkPath = value.detail;
         //if a workspace folder is open, save it to the workspace settings
         //if no folder is open, save it globally
-        let configurationTarget =
-          vscode.workspace.workspaceFolders !== undefined
-            ? undefined
-            : vscode.ConfigurationTarget.Global;
-        vscode.workspace
-          .getConfiguration("as3mxml")
-          .update("sdk.framework", newFrameworkPath, configurationTarget);
+        if (saveSDKPathToSettings) {
+          let configurationTarget =
+            vscode.workspace.workspaceFolders !== undefined
+              ? undefined
+              : vscode.ConfigurationTarget.Global;
+          vscode.workspace
+            .getConfiguration("as3mxml")
+            .update("sdk.framework", newFrameworkPath, configurationTarget);
+        }
+        return Promise.resolve(vscode.Uri.file(newFrameworkPath));
       },
       () => {
         //do nothing
+        return Promise.resolve(undefined);
       }
     );
 }

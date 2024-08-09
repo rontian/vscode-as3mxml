@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@ limitations under the License.
 import * as vscode from "vscode";
 import validateFrameworkSDK from "./validateFrameworkSDK";
 import findSDKInLocalRoyaleNodeModule from "./findSDKInLocalRoyaleNodeModule";
-import findSDKInLocalFlexJSNodeModule from "./findSDKInLocalFlexJSNodeModule";
 import findSDKInRoyaleHomeEnvironmentVariable from "./findSDKInRoyaleHomeEnvironmentVariable";
 import findSDKInFlexHomeEnvironmentVariable from "./findSDKInFlexHomeEnvironmentVariable";
 import findSDKsInPathEnvironmentVariable from "./findSDKsInPathEnvironmentVariable";
@@ -46,10 +45,6 @@ export default function getFrameworkSDKPathWithFallbacks(): string {
   if (!sdkPath) {
     //check if an Apache Royale Node module is installed locally in the workspace
     sdkPath = findSDKInLocalRoyaleNodeModule();
-  }
-  if (!sdkPath) {
-    //check if an Apache FlexJS Node module is installed locally in the workspace
-    sdkPath = findSDKInLocalFlexJSNodeModule();
   }
   if (!sdkPath) {
     //the ROYALE_HOME environment variable may point to an SDK

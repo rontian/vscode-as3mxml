@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,21 +20,11 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 class MXMLNamespaceUtilsTests {
-	//--- getNamespaceFromURI
+	// --- getNamespaceFromURI
 
 	@Test
 	void testGetNamespaceFromURIWithRoyaleLibrary() {
 		String uri = "library://ns.apache.org/royale/example";
-		MXMLNamespace result = MXMLNamespaceUtils.getNamespaceFromURI(uri, new PrefixMap());
-		Assertions.assertNotNull(result);
-		Assertions.assertEquals(uri, result.uri, "MXMLNamespaceUtils.getNamespaceFromURI() returned incorrect uri.");
-		Assertions.assertEquals("example", result.prefix,
-				"MXMLNamespaceUtils.getNamespaceFromURI() returned incorrect prefix.");
-	}
-
-	@Test
-	void testGetNamespaceFromURIWithFlexJSLibrary() {
-		String uri = "library://ns.apache.org/flexjs/example";
 		MXMLNamespace result = MXMLNamespaceUtils.getNamespaceFromURI(uri, new PrefixMap());
 		Assertions.assertNotNull(result);
 		Assertions.assertEquals(uri, result.uri, "MXMLNamespaceUtils.getNamespaceFromURI() returned incorrect uri.");

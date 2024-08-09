@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ limitations under the License.
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import parseXML = require("@rgrove/parse-xml");
+import { parseXml } from "@rgrove/parse-xml";
 import validateFrameworkSDK from "../utils/validateFrameworkSDK";
 
 const FILE_EXTENSION_AS3PROJ = ".as3proj";
@@ -83,7 +83,7 @@ export function importFlashDevelopProject(
 ) {
   getOutputChannel().clear();
   getOutputChannel().appendLine(MESSAGE_IMPORT_START);
-  getOutputChannel().show();
+  getOutputChannel().show(true);
   let result = importFlashDevelopProjectInternal(workspaceFolder);
   if (result) {
     getOutputChannel().appendLine(MESSAGE_IMPORT_COMPLETE);
@@ -114,7 +114,7 @@ function importFlashDevelopProjectInternal(
   }
   let project = null;
   try {
-    let parsedXML = parseXML(projectText);
+    let parsedXML = parseXml(projectText);
     project = parsedXML.children[0];
   } catch (error) {
     addError(ERROR_XML_PARSE + projectFilePath);
@@ -329,8 +329,8 @@ function migrateOutputElement(outputElement: any, result: any) {
       result.compilerOptions["default-background-color"] = backgroundColor;
     } else if ("preferredSDK" in attributes) {
       let frameworkSDKConfig = vscode.workspace.getConfiguration("as3mxml");
-      let frameworkSDK = frameworkSDKConfig.inspect("sdk.framework")
-        .workspaceValue;
+      let frameworkSDK =
+        frameworkSDKConfig.inspect("sdk.framework").workspaceValue;
       if (!frameworkSDK) {
         let preferredSDK = attributes.preferredSDK as string;
         let validatedSDKPath = validateFrameworkSDK(preferredSDK);
@@ -389,7 +389,8 @@ function migrateBuildElement(buildElement: any, result: any) {
     //TODO: showInvalidCSS
     //TODO: showDeprecationWarnings
     else if ("showUnusedTypeSelectorWarnings" in attributes) {
-      let showUnusedTypeSelectorWarnings = attributes.showUnusedTypeSelectorWarnings as string;
+      let showUnusedTypeSelectorWarnings =
+        attributes.showUnusedTypeSelectorWarnings as string;
       result.compilerOptions["show-unused-type-selector-warnings"] =
         showUnusedTypeSelectorWarnings === "True";
     } else if ("strict" in attributes) {
@@ -399,7 +400,8 @@ function migrateBuildElement(buildElement: any, result: any) {
       let useNetwork = attributes.useNetwork as string;
       result.compilerOptions["use-network"] = useNetwork === "True";
     } else if ("useResourceBundleMetadata" in attributes) {
-      let useResourceBundleMetadata = attributes.useResourceBundleMetadata as string;
+      let useResourceBundleMetadata =
+        attributes.useResourceBundleMetadata as string;
       result.compilerOptions["use-resource-bundle-metadata"] =
         useResourceBundleMetadata === "True";
     } else if ("warnings" in attributes) {

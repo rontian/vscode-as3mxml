@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.util.List;
 
 /**
  * Defines constants for all top-level fields of an asconfig.json file, and
- * stores the parsed values for those fields. 
+ * stores the parsed values for those fields.
  */
 public class ProjectOptions {
     public String type;
@@ -32,15 +32,18 @@ public class ProjectOptions {
      * where the drive letter could have different cases.
      */
     public String[] files;
+    public String mainClass;
     public List<String> compilerOptions;
     public List<String> additionalOptions;
 
-    //while the following values are also included in the compiler options,
-    //we need them available for other things in the language server
+    // while the following values are also included in the compiler options,
+    // we need them available for other things in the language server
     public List<String> targets;
 
     public boolean equals(ProjectOptions other) {
         return other.type.equals(type) && other.config.equals(config) && Arrays.equals(other.files, files)
+                && ((other.mainClass == null && mainClass == null)
+                        || (other.mainClass != null && other.mainClass.equals(mainClass)))
                 && other.compilerOptions.equals(compilerOptions) && other.additionalOptions.equals(additionalOptions)
                 && other.targets.equals(targets);
     }

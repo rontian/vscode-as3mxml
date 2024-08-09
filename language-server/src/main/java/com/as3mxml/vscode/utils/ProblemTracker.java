@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -53,8 +53,8 @@ public class ProblemTracker {
     }
 
     public void releaseStale() {
-        //if any files have been removed, they will still appear in this set, so
-        //clear the errors so that they don't persist
+        // if any files have been removed, they will still appear in this set,
+        // so clear the errors so that they don't persist
         for (URI uri : staleFilesWithProblems) {
             PublishDiagnosticsParams publish = new PublishDiagnosticsParams();
             publish.setDiagnostics(new ArrayList<>());

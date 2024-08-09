@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,19 +19,15 @@ package com.as3mxml.vscode.mxml;
  * Namespace constants for MXML libraries.
  */
 public interface IMXMLLibraryConstants {
-    //Flex
+    // Flex
     String MX = "library://ns.adobe.com/flex/mx";
     String SPARK = "library://ns.adobe.com/flex/spark";
 
-    //Royale
-    String FLEXJS_BASIC = "library://ns.apache.org/flexjs/basic";
-    String FLEXJS_EXPRESS = "library://ns.apache.org/flexjs/express";
-
-    //Royale
+    // Royale
     String ROYALE_BASIC = "library://ns.apache.org/royale/basic";
     String ROYALE_EXPRESS = "library://ns.apache.org/royale/express";
     String ROYALE_JEWEL = "library://ns.apache.org/royale/jewel";
 
-    //Feathers
+    // Feathers
     String FEATHERS = "library://ns.feathersui.com/mxml";
 }

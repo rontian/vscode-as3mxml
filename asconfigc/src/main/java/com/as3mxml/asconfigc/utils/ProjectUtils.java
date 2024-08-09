@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -31,13 +31,14 @@ import com.as3mxml.asconfigc.compiler.ProjectType;
 
 public class ProjectUtils {
 	private static final String JAR_NAME_ADT = "adt.jar";
+	private static final String AIR_NAMESPACE_PREFIX = "<application xmlns=\"";
 
 	public static String findAIRDescriptorOutputPath(String mainFile, String airDescriptor, String outputPath,
-			boolean isSWF, boolean debugBuild) {
+			String projectPath, boolean isSWF, boolean debugBuild) {
 		String outputDir = ProjectUtils.findOutputDirectory(mainFile, outputPath, isSWF);
 		String fileName = null;
 		if (airDescriptor == null) {
-			fileName = generateApplicationID(mainFile, outputPath) + "-app.xml";
+			fileName = generateApplicationID(mainFile, outputPath, projectPath) + "-app.xml";
 		} else {
 			fileName = Paths.get(airDescriptor).getFileName().toString();
 		}
@@ -73,8 +74,8 @@ public class ProjectUtils {
 	}
 
 	public static String findOutputPath(String mainFile, String outputValue, boolean isSWF) {
-		if (outputValue == null) {
-			if (mainFile == null) {
+		if (outputValue == null || outputValue.length() == 0) {
+			if (mainFile == null || mainFile.length() == 0) {
 				return Paths.get(System.getProperty("user.dir")).toString();
 			}
 			Path mainFilePath = Paths.get(mainFile);
@@ -86,7 +87,7 @@ public class ProjectUtils {
 				mainFileParentPath = Paths.get(System.getProperty("user.dir"));
 			}
 			if (!isSWF) {
-				//Royale treats these directory structures as a special case
+				// Royale treats these directory structures as a special case
 				String mainFileParentPathAsString = mainFileParentPath.toString();
 				if (mainFileParentPathAsString.endsWith("/src") || mainFileParentPathAsString.endsWith("\\src")) {
 					mainFileParentPath = mainFileParentPath.resolve("../");
@@ -102,7 +103,7 @@ public class ProjectUtils {
 					return null;
 				}
 			}
-			return mainFileParentPath.resolve(findOutputFileName(mainFile, outputValue)).toString();
+			return mainFileParentPath.resolve(findSWFOutputFileName(mainFile, outputValue)).toString();
 		}
 		Path outputPath = Paths.get(outputValue);
 		if (!outputPath.isAbsolute()) {
@@ -112,8 +113,8 @@ public class ProjectUtils {
 	}
 
 	public static String findOutputDirectory(String mainFile, String outputValue, boolean isSWF) {
-		if (outputValue == null) {
-			if (mainFile == null) {
+		if (outputValue == null || outputValue.length() == 0) {
+			if (mainFile == null || mainFile.length() == 0) {
 				return System.getProperty("user.dir");
 			}
 			Path mainFilePath = Paths.get(mainFile);
@@ -125,7 +126,7 @@ public class ProjectUtils {
 				return System.getProperty("user.dir");
 			}
 			if (!isSWF) {
-				//Royale treats these directory structures as a special case
+				// Royale treats these directory structures as a special case
 				String mainFileParentPathAsString = mainFileParentPath.toString();
 				if (mainFileParentPathAsString.endsWith("/src") || mainFileParentPathAsString.endsWith("\\src")) {
 					mainFileParentPath = mainFileParentPath.resolve("../");
@@ -154,15 +155,32 @@ public class ProjectUtils {
 		return outputValueParentPath.toString();
 	}
 
-	public static String generateApplicationID(String mainFile, String outputPath) {
-		if (outputPath == null && mainFile == null) {
-			return null;
-		}
+	public static String generateApplicationID(String mainFile, String outputPath, String projectPath) {
 		String fileName = null;
-		if (outputPath == null) {
+		if (mainFile != null && mainFile.length() > 0) {
 			fileName = Paths.get(mainFile).getFileName().toString();
-		} else {
-			fileName = Paths.get(outputPath).getFileName().toString();
+		}
+		if (fileName == null && outputPath != null && outputPath.length() > 0) {
+			File outputFile = Paths.get(outputPath).toFile();
+			if (outputFile.getName().endsWith(".swf")) {
+				// use the .swf file name, if it exists
+				fileName = outputFile.getName();
+			}
+		}
+		if (fileName == null && projectPath != null && projectPath.length() > 0) {
+			File projectDir = Paths.get(projectPath).toFile();
+			if (projectDir.isDirectory()) {
+				try {
+					// get the real name, if the path ends with . or ..
+					projectDir = projectDir.getCanonicalFile();
+					fileName = projectDir.getName();
+				} catch (IOException e) {
+					fileName = null;
+				}
+			}
+		}
+		if (fileName == null || fileName.length() == 0) {
+			return null;
 		}
 		int extensionIndex = fileName.indexOf('.');
 		if (extensionIndex == -1) {
@@ -171,12 +189,12 @@ public class ProjectUtils {
 		return fileName.substring(0, extensionIndex);
 	}
 
-	public static String findOutputFileName(String mainFile, String outputPath) {
-		if (outputPath == null) {
-			if (mainFile == null) {
+	public static String findSWFOutputFileName(String mainFile, String outputPath) {
+		if (outputPath == null || outputPath.length() == 0) {
+			if (mainFile == null || mainFile.length() == 0) {
 				return null;
 			}
-			//replace .as or .mxml with .swf
+			// replace .as or .mxml with .swf
 			Path mainFilePath = Paths.get(mainFile);
 			String fileName = mainFilePath.getFileName().toString();
 			String extension = "";
@@ -191,10 +209,10 @@ public class ProjectUtils {
 
 	public static String findApplicationContent(String mainFile, String outputPath, boolean isSWF) {
 		if (!isSWF) {
-			//An Adobe AIR app for Royale will load an HTML file as its main content
+			// An Adobe AIR app for Royale will load an HTML file as its main content
 			return "index.html";
 		}
-		return findOutputFileName(mainFile, outputPath);
+		return findSWFOutputFileName(mainFile, outputPath);
 	}
 
 	public static Path findCompilerJarPath(String projectType, String sdkPath, boolean isSWF) {
@@ -208,7 +226,7 @@ public class ProjectUtils {
 		for (String jarName : jarNames) {
 			if (isSWF) {
 				jarPath = Paths.get(sdkPath, "lib", jarName);
-			} else //js
+			} else // js
 			{
 				jarPath = Paths.get(sdkPath, "js", "lib", jarName);
 			}
@@ -236,12 +254,12 @@ public class ProjectUtils {
 		Set<String> result = new HashSet<>();
 		List<String> sourcePathsCopy = new ArrayList<>();
 		if (sourcePaths != null) {
-			//we don't want to modify the original list, so copy the items over
+			// we don't want to modify the original list, so copy the items over
 			sourcePathsCopy.addAll(sourcePaths);
 		}
 		if (mainFile != null) {
-			//the parent directory of the main file is automatically added as a
-			//source path by the compiler
+			// the parent directory of the main file is automatically added as a
+			// source path by the compiler
 			Path mainFileParent = Paths.get(mainFile).getParent();
 			sourcePathsCopy.add(mainFileParent.toString());
 		}
@@ -249,14 +267,14 @@ public class ProjectUtils {
 			String sourcePath = sourcePathsCopy.get(i);
 			Path path = Paths.get(sourcePath);
 			if (!path.isAbsolute()) {
-				//force all source paths into absolute paths
+				// force all source paths into absolute paths
 				path = Paths.get(System.getProperty("user.dir"), sourcePath);
 				sourcePathsCopy.set(i, path.toString());
 			}
 		}
 		if (sourcePathsCopy.contains(outputDirectory)) {
-			//assets in source path will not be copied because the output
-			//directory is a source path
+			// assets in source path will not be copied because the output
+			// directory is a source path
 			return result;
 		}
 		if (excludes != null) {
@@ -264,7 +282,7 @@ public class ProjectUtils {
 				String exclude = excludes.get(i);
 				Path path = Paths.get(exclude);
 				if (!path.isAbsolute()) {
-					//force all excludes into absolute paths
+					// force all excludes into absolute paths
 					path = Paths.get(System.getProperty("user.dir"), exclude);
 					excludes.set(i, path.toString());
 				}
@@ -275,8 +293,9 @@ public class ProjectUtils {
 			File file = new File(sourcePath);
 			File[] listedFiles = file.listFiles();
 			if (listedFiles == null) {
-				//this file is invalid for some reason
-				throw new IOException("Invalid source path: " + sourcePath);
+				// this file is invalid for some reason
+				System.err.println("Skipping assets in source path: " + sourcePath);
+				continue;
 			}
 			for (File innerFile : file.listFiles()) {
 				String innerFilePath = innerFile.getAbsolutePath();
@@ -306,12 +325,12 @@ public class ProjectUtils {
 			String outputDirectory) throws IOException {
 		List<String> sourcePathsCopy = new ArrayList<>();
 		if (sourcePaths != null) {
-			//we don't want to modify the original list, so copy the items over
+			// we don't want to modify the original list, so copy the items over
 			sourcePathsCopy.addAll(sourcePaths);
 		}
 		if (mainFile != null) {
-			//the parent directory of the main file is automatically added as a
-			//source path by the compiler
+			// the parent directory of the main file is automatically added as a
+			// source path by the compiler
 			Path mainFileParent = Paths.get(mainFile).getParent();
 			sourcePathsCopy.add(mainFileParent.toString());
 		}
@@ -338,13 +357,22 @@ public class ProjectUtils {
 	}
 
 	public static String populateAdobeAIRDescriptorTemplate(String descriptor, String id) {
-		//these fields are required
-		descriptor = descriptor.replaceFirst("<id>.*?<\\/id>", "<id>" + id + "</id>");
-		return descriptor.replaceFirst("<filename>.*?<\\/filename>", "<filename>" + id + "</filename>");
+		// these fields are required
+		// (?!\s*-->) ignores lines that are commented out
+		descriptor = descriptor.replaceFirst("<id>.*?<\\/id>(?!\\s*-->)", "<id>" + id + "</id>");
+		return descriptor.replaceFirst("<filename>.*?<\\/filename>(?!\\s*-->)", "<filename>" + id + "</filename>");
 	}
 
 	public static String populateAdobeAIRDescriptorContent(String descriptor, String contentValue) {
-		return descriptor.replaceFirst("<content>.*?<\\/content>", "<content>" + contentValue + "</content>");
+		// (?!\s*-->) ignores lines that are commented out
+		return descriptor.replaceFirst("<content>.*?<\\/content>(?!\\s*-->)",
+				"<content>" + contentValue + "</content>");
+	}
+
+	public static String populateAdobeAIRDescriptorNamespace(String descriptor, String namespaceValue) {
+		// (?!\s*-->) ignores lines that are commented out
+		return descriptor.replaceFirst("<application xmlns=\".*?\"",
+				"<application xmlns=\"" + namespaceValue + "\"");
 	}
 
 	public static String populateHTMLTemplateFile(String contents, Map<String, String> templateOptions) {
@@ -356,5 +384,21 @@ public class ProjectUtils {
 			contents = contents.replace(token, templateOptions.get(option));
 		}
 		return contents;
+	}
+
+	public static String findAIRDescriptorNamespace(String airDescriptorContents) {
+		if (airDescriptorContents == null) {
+			return null;
+		}
+		int startIndex = airDescriptorContents.indexOf(AIR_NAMESPACE_PREFIX);
+		if (startIndex == -1) {
+			return null;
+		}
+		startIndex += AIR_NAMESPACE_PREFIX.length();
+		int endIndex = airDescriptorContents.indexOf("\"", startIndex);
+		if (endIndex == -1) {
+			return null;
+		}
+		return airDescriptorContents.substring(startIndex, endIndex);
 	}
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,7 +25,10 @@ import java.util.Set;
 import com.as3mxml.vscode.compiler.problems.DisabledConfigConditionBlockProblem;
 import com.as3mxml.vscode.compiler.problems.UnusedImportProblem;
 
+import org.apache.royale.compiler.asdoc.IASDocComment;
+import org.apache.royale.compiler.common.ISourceLocation;
 import org.apache.royale.compiler.constants.IASLanguageConstants;
+import org.apache.royale.compiler.constants.IASLanguageConstants.BuiltinType;
 import org.apache.royale.compiler.constants.IMetaAttributeConstants;
 import org.apache.royale.compiler.definitions.IClassDefinition;
 import org.apache.royale.compiler.definitions.IClassDefinition.ClassClassification;
@@ -36,6 +39,7 @@ import org.apache.royale.compiler.definitions.IFunctionDefinition.FunctionClassi
 import org.apache.royale.compiler.definitions.IGetterDefinition;
 import org.apache.royale.compiler.definitions.IInterfaceDefinition;
 import org.apache.royale.compiler.definitions.IInterfaceDefinition.InterfaceClassification;
+import org.apache.royale.compiler.definitions.IParameterDefinition;
 import org.apache.royale.compiler.definitions.ISetterDefinition;
 import org.apache.royale.compiler.definitions.ITypeDefinition;
 import org.apache.royale.compiler.definitions.IVariableDefinition;
@@ -68,6 +72,8 @@ import org.apache.royale.compiler.tree.as.IVariableNode;
 import org.apache.royale.compiler.tree.mxml.IMXMLSpecifierNode;
 import org.apache.royale.compiler.units.ICompilationUnit;
 
+import org.apache.royale.compiler.tree.as.IDocumentableDefinitionNode;
+
 public class ASTUtils {
     private static final String DOT_STAR = ".*";
     private static final String UNDERSCORE_UNDERSCORE_AS3_PACKAGE = "__AS3__.";
@@ -81,30 +87,30 @@ public class ASTUtils {
             return null;
         }
         if (ast == null) {
-            //we couldn't find the root node for this file
+            // we couldn't find the root node for this file
             System.err.println("Could not find AST: " + unit.getAbsoluteFilename());
             return null;
         }
         if (ast instanceof FileNode) {
             FileNode fileNode = (FileNode) ast;
-            //seems to work better than populateFunctionNodes() alone
+            // seems to work better than populateFunctionNodes() alone
             fileNode.parseRequiredFunctionBodies();
         }
         if (ast instanceof IFileNode) {
             try {
                 IFileNode fileNode = (IFileNode) ast;
-                //call this in addition to parseRequiredFunctionBodies() because
-                //functions in included files won't be populated without it
+                // call this in addition to parseRequiredFunctionBodies() because
+                // functions in included files won't be populated without it
                 fileNode.populateFunctionNodes();
             } catch (NullPointerException e) {
-                //sometimes, a null pointer exception can be thrown inside
-                //FunctionNode.parseFunctionBody(). seems like a Royale bug.
+                // sometimes, a null pointer exception can be thrown inside
+                // FunctionNode.parseFunctionBody(). seems like a Royale bug.
             }
         }
         return ast;
     }
 
-    public static boolean containsWithStart(IASNode node, int offset) {
+    public static boolean containsWithStart(ISourceLocation node, int offset) {
         return offset >= node.getAbsoluteStart() && offset <= node.getAbsoluteEnd();
     }
 
@@ -146,9 +152,9 @@ public class ASTUtils {
         for (int i = 0, count = node.getChildCount(); i < count; i++) {
             IASNode child = node.getChild(i);
             if (child.getAbsoluteStart() == -1) {
-                //the Royale compiler has a quirk where a node can have an
-                //unknown offset, but its children have known offsets. this is
-                //where we work around that...
+                // the Royale compiler has a quirk where a node can have an
+                // unknown offset, but its children have known offsets. this is
+                // where we work around that...
                 for (int j = 0, innerCount = child.getChildCount(); j < innerCount; j++) {
                     IASNode innerChild = child.getChild(j);
                     IASNode result = getContainingNodeIncludingStart(innerChild, offset);
@@ -166,34 +172,103 @@ public class ASTUtils {
         return node;
     }
 
+    public static ISourceLocation getContainingNodeOrDocCommentIncludingStart(IASNode node, int offset) {
+        if (node instanceof IDocumentableDefinitionNode) {
+            IDocumentableDefinitionNode docNode = (IDocumentableDefinitionNode) node;
+            IASDocComment docComment = docNode.getASDocComment();
+            if (docComment instanceof ISourceLocation) {
+                ISourceLocation docCommentWithLocation = (ISourceLocation) docComment;
+                if (containsWithStart(docCommentWithLocation, offset)) {
+                    return docCommentWithLocation;
+                }
+            }
+        }
+        if (!containsWithStart(node, offset)) {
+            return null;
+        }
+        for (int i = 0, count = node.getChildCount(); i < count; i++) {
+            IASNode child = node.getChild(i);
+            if (child.getAbsoluteStart() == -1) {
+                // the Royale compiler has a quirk where a node can have an
+                // unknown offset, but its children have known offsets. this is
+                // where we work around that...
+                for (int j = 0, innerCount = child.getChildCount(); j < innerCount; j++) {
+                    IASNode innerChild = child.getChild(j);
+                    ISourceLocation result = getContainingNodeOrDocCommentIncludingStart(innerChild,
+                            offset);
+                    if (result != null) {
+                        return result;
+                    }
+                }
+                continue;
+            }
+            ISourceLocation result = getContainingNodeOrDocCommentIncludingStart(child, offset);
+            if (result != null) {
+                return result;
+            }
+        }
+        return node;
+    }
+
+    public static boolean isExplicitlyImported(IASNode offsetNode, IDefinition definition) {
+        return isExplicitlyImported(offsetNode, definition.getQualifiedName());
+    }
+
+    public static boolean isExplicitlyImported(IASNode offsetNode, String qualifiedName) {
+        int packageEndIndex = qualifiedName.lastIndexOf(".");
+        String packageImportName = packageEndIndex == -1 ? qualifiedName
+                : qualifiedName.substring(0, packageEndIndex) + ".*";
+        IASNode node = offsetNode;
+        while (node != null) {
+            for (int i = 0; i < node.getChildCount(); i++) {
+                IASNode child = node.getChild(i);
+                if (child instanceof IImportNode) {
+                    IImportNode importNode = (IImportNode) child;
+                    String importNodeName = importNode.getImportName();
+                    if (qualifiedName.equals(importNodeName) || packageImportName.equals(importNodeName)) {
+                        return true;
+                    }
+                }
+            }
+            node = node.getParent();
+        }
+        return false;
+    }
+
+    public static boolean needsImport(IASNode offsetNode, IDefinition definition) {
+        return needsImport(offsetNode, definition.getQualifiedName());
+    }
+
     public static boolean needsImport(IASNode offsetNode, String qualifiedName) {
         int packageEndIndex = qualifiedName.lastIndexOf(".");
         if (packageEndIndex == -1) {
-            //if it's not in a package, it doesn't need to be imported
+            // if it's not in a package, it doesn't need to be imported
             return false;
         }
         if (qualifiedName.startsWith(UNDERSCORE_UNDERSCORE_AS3_PACKAGE)) {
-            //things in this package don't need to be imported
+            // things in this package don't need to be imported
             return false;
         }
+        String packageImportName = qualifiedName.substring(0, packageEndIndex) + ".*";
         IASNode node = offsetNode;
         while (node != null) {
             if (node instanceof IPackageNode) {
                 String packageName = qualifiedName.substring(0, packageEndIndex);
                 IPackageNode packageNode = (IPackageNode) node;
                 if (packageName.equals(packageNode.getName())) {
-                    //same package, so it doesn't need to be imported
+                    // same package, so it doesn't need to be imported
                     return false;
                 }
-                //imports outside of the package node do not apply to a node
-                //inside the package
+                // imports outside of the package node do not apply to a node
+                // inside the package
                 break;
             }
             for (int i = 0; i < node.getChildCount(); i++) {
                 IASNode child = node.getChild(i);
                 if (child instanceof IImportNode) {
                     IImportNode importNode = (IImportNode) child;
-                    if (qualifiedName.equals(importNode.getImportName())) {
+                    String importNodeName = importNode.getImportName();
+                    if (qualifiedName.equals(importNodeName) || packageImportName.equals(importNodeName)) {
                         return false;
                     }
                 }
@@ -209,15 +284,16 @@ public class ASTUtils {
         return importsToAdd;
     }
 
-    public static List<IImportNode> findImportNodesToRemove(IASNode node, Set<String> requiredImports) {
+    public static List<IImportNode> findImportNodesToRemove(IASNode node, String qualifiedName,
+            Set<String> requiredImports) {
         List<IImportNode> importsToRemove = new ArrayList<>();
-        findImportNodesToRemove(node, requiredImports, importsToRemove);
+        findImportNodesToRemove(node, qualifiedName, requiredImports, importsToRemove, null);
         return importsToRemove;
     }
 
-    public static void findUnusedImportProblems(IASNode ast, Set<String> requiredImports,
+    public static void findUnusedImportProblems(IASNode ast, String qualifiedName, Set<String> requiredImports,
             List<ICompilerProblem> problems) {
-        List<IImportNode> importsToRemove = findImportNodesToRemove(ast, requiredImports);
+        List<IImportNode> importsToRemove = findImportNodesToRemove(ast, qualifiedName, requiredImports);
         for (IImportNode importNode : importsToRemove) {
             problems.add(new UnusedImportProblem(importNode));
         }
@@ -275,7 +351,7 @@ public class ASTUtils {
                             continue;
                         }
                     } else {
-                        //unknown definition type
+                        // unknown definition type
                         continue;
                     }
                     String baseName = definition.getBaseName();
@@ -284,11 +360,11 @@ public class ASTUtils {
                     }
                     String qualifiedName = definition.getQualifiedName();
                     if (baseName.equals(qualifiedName)) {
-                        //this definition is top-level. no import required.
+                        // this definition is top-level. no import required.
                         continue;
                     }
-                    if(!allowDuplicates) {
-                        if(qualifiedNames.contains(qualifiedName)) {
+                    if (!allowDuplicates) {
+                        if (qualifiedNames.contains(qualifiedName)) {
                             continue;
                         }
                         qualifiedNames.add(qualifiedName);
@@ -296,7 +372,7 @@ public class ASTUtils {
                     result.add(definition);
                 }
             } catch (Exception e) {
-                //safe to ignore
+                // safe to ignore
             }
         }
         return result;
@@ -363,10 +439,10 @@ public class ASTUtils {
 
         String eventClassName = findEventClassFromTypeDefinitionMetadata(eventType, typeDefinition, project);
         if (eventClassName == null) {
-            //lets use Object as the fallback if [Event] metadata is missing
-            //we can't assume a specific class, like flash.events.Event
-            //because Apache Royale or Starling objects might dispatch other
-            //types of events.
+            // lets use Object as the fallback if [Event] metadata is missing
+            // we can't assume a specific class, like flash.events.Event
+            // because Apache Royale or Starling objects might dispatch other
+            // types of events.
             return IASLanguageConstants.Object;
         }
         return eventClassName;
@@ -401,7 +477,7 @@ public class ASTUtils {
                     result.add(identifierNode);
                 } else if (resolvedDefinition instanceof IClassDefinition && definition instanceof IFunctionDefinition
                         && ((IFunctionDefinition) definition).isConstructor()) {
-                    //if renaming the constructor, also rename the class
+                    // if renaming the constructor, also rename the class
                     IClassDefinition classDefinition = (IClassDefinition) resolvedDefinition;
                     IFunctionDefinition constructorDefinition = classDefinition.getConstructor();
                     if (constructorDefinition != null && definition == constructorDefinition) {
@@ -410,25 +486,36 @@ public class ASTUtils {
                 } else if (resolvedDefinition instanceof IFunctionDefinition
                         && ((IFunctionDefinition) resolvedDefinition).isConstructor()
                         && definition instanceof IClassDefinition) {
-                    //if renaming the class, also rename the constructor
+                    // if renaming the class, also rename the constructor
                     IClassDefinition classDefinition = (IClassDefinition) definition;
                     IFunctionDefinition constructorDefinition = classDefinition.getConstructor();
                     if (constructorDefinition != null && resolvedDefinition == constructorDefinition) {
                         result.add(identifierNode);
                     }
                 } else if (resolvedDefinition instanceof ISetterDefinition && definition instanceof IGetterDefinition) {
-                    //if renaming the getter, also rename the setter
+                    // if renaming the getter, also rename the setter
                     IGetterDefinition getterDefinition = (IGetterDefinition) definition;
                     ISetterDefinition setterDefinition = getterDefinition.resolveSetter(project);
                     if (setterDefinition != null && resolvedDefinition == setterDefinition) {
                         result.add(identifierNode);
                     }
                 } else if (resolvedDefinition instanceof IGetterDefinition && definition instanceof ISetterDefinition) {
-                    //if renaming the setter, also rename the getter
+                    // if renaming the setter, also rename the getter
                     ISetterDefinition setterDefinition = (ISetterDefinition) definition;
                     IGetterDefinition getterDefinition = setterDefinition.resolveGetter(project);
                     if (getterDefinition != null && resolvedDefinition == getterDefinition) {
                         result.add(identifierNode);
+                    }
+                } else if (resolvedDefinition instanceof IFunctionDefinition
+                        && definition instanceof IFunctionDefinition) {
+                    IFunctionDefinition resolvedFunctionFunction = (IFunctionDefinition) resolvedDefinition;
+                    if (resolvedFunctionFunction.isOverride()) {
+                        IFunctionDefinition overriddenFunction = resolvedFunctionFunction
+                                .resolveOverriddenFunction(project);
+                        if (definition == overriddenFunction) {
+                            result.add(identifierNode);
+                        }
+
                     }
                 }
             }
@@ -456,38 +543,42 @@ public class ASTUtils {
                 IDefinition definition = identifierNode.resolve(project);
                 if (definition == null) {
                     if (node instanceof IFunctionCallNode) {
-                        //new Identifier()
-                        //x = Identifier(y)
+                        // new Identifier()
+                        // x = Identifier(y)
                         IFunctionCallNode functionCallNode = (IFunctionCallNode) node;
-                        if (functionCallNode.getNameNode().equals(identifierNode)) {
+                        IExpressionNode nameNode = functionCallNode.getNameNode();
+                        if (nameNode != null && nameNode.equals(identifierNode)) {
                             importsToAdd.add(identifierName);
                         }
                     } else if (node instanceof IVariableNode) {
-                        //var x:Identifier
+                        // var x:Identifier
                         IVariableNode variableNode = (IVariableNode) node;
-                        if (variableNode.getVariableTypeNode().equals(identifierNode)) {
+                        IExpressionNode variableTypeNode = variableNode.getVariableTypeNode();
+                        if (variableTypeNode != null && variableTypeNode.equals(identifierNode)) {
                             importsToAdd.add(identifierName);
                         }
                     } else if (node instanceof IFunctionNode) {
-                        //function():Identifier
+                        // function():Identifier
                         IFunctionNode functionNode = (IFunctionNode) node;
-                        if (functionNode.getReturnTypeNode().equals(identifierNode)) {
+                        IExpressionNode returnTypeNode = functionNode.getReturnTypeNode();
+                        if (returnTypeNode != null && returnTypeNode.equals(identifierNode)) {
                             importsToAdd.add(identifierName);
                         }
                     } else if (node instanceof IClassNode) {
-                        //class x extends Identifier
+                        // class x extends Identifier
                         IClassNode classNode = (IClassNode) node;
-                        if (classNode.getBaseClassExpressionNode().equals(identifierNode)) {
+                        IExpressionNode baseClassExpressionNode = classNode.getBaseClassExpressionNode();
+                        if (baseClassExpressionNode != null && baseClassExpressionNode.equals(identifierNode)) {
                             importsToAdd.add(identifierName);
                         }
                     } else if (node instanceof ITransparentContainerNode && gp instanceof IClassNode) {
-                        //class x extends y implements Identifier
+                        // class x extends y implements Identifier
                         IClassNode classNode = (IClassNode) gp;
                         if (Arrays.asList(classNode.getImplementedInterfaceNodes()).contains(identifierNode)) {
                             importsToAdd.add(identifierName);
                         }
                     } else if (node instanceof ITransparentContainerNode && gp instanceof IInterfaceNode) {
-                        //interface x extends Identifier
+                        // interface x extends Identifier
                         IInterfaceNode classNode = (IInterfaceNode) gp;
                         if (Arrays.asList(classNode.getExtendedInterfaceNodes()).contains(identifierNode)) {
                             importsToAdd.add(identifierName);
@@ -496,11 +587,11 @@ public class ASTUtils {
                             && (node.getNodeID().equals(ASTNodeID.Op_IsID)
                                     || node.getNodeID().equals(ASTNodeID.Op_AsID))
                             && ((IBinaryOperatorNode) node).getRightOperandNode().equals(identifierNode)) {
-                        //x is Identifier
-                        //x as Identifier
+                        // x is Identifier
+                        // x as Identifier
                         importsToAdd.add(identifierName);
                     } else if (node instanceof IScopedNode && node instanceof IBlockNode) {
-                        //{ Identifier; }
+                        // { Identifier; }
                         importsToAdd.add(identifierName);
                     }
                 }
@@ -509,8 +600,11 @@ public class ASTUtils {
         }
     }
 
-    protected static void findImportNodesToRemove(IASNode node, Set<String> requiredImports,
-            List<IImportNode> importsToRemove) {
+    protected static void findImportNodesToRemove(IASNode node, String qualifiedName, Set<String> requiredImports,
+            List<IImportNode> importsToRemove, IPackageNode packageNode) {
+        if (node instanceof IPackageNode) {
+            packageNode = (IPackageNode) node;
+        }
         for (int i = 0, count = node.getChildCount(); i < count; i++) {
             IASNode child = node.getChild(i);
             if (child instanceof IImportNode) {
@@ -519,29 +613,30 @@ public class ASTUtils {
                 if (importName.endsWith(DOT_STAR)) {
                     String importPackage = importName.substring(0, importName.length() - 2);
                     if (containsReferenceForImportPackage(importPackage, requiredImports)) {
-                        //this class is referenced by a wildcard import
+                        // this class is referenced by a wildcard import
                         continue;
                     }
                 }
-                if (!requiredImports.contains(importName)) {
+                if (!requiredImports.contains(importName)
+                        && (packageNode != null || !importName.equals(qualifiedName))) {
                     importsToRemove.add(importNode);
                 }
-                //import nodes can't be references
+                // import nodes can't be references
                 continue;
             }
             if (child.isTerminal()) {
-                //terminal nodes don't have children, so don't bother checking
+                // terminal nodes don't have children, so don't bother checking
                 continue;
             }
-            findImportNodesToRemove(child, requiredImports, importsToRemove);
+            findImportNodesToRemove(child, qualifiedName, requiredImports, importsToRemove, packageNode);
         }
     }
 
     private static boolean containsReferenceForImportPackage(String importPackage, Set<String> referencedDefinitions) {
         for (String reference : referencedDefinitions) {
             if (reference.startsWith(importPackage) && reference.indexOf('.', importPackage.length() + 1) == -1) {
-                //an entire package is imported, so check if any
-                //references are in that package
+                // an entire package is imported, so check if any
+                // references are in that package
                 return true;
             }
         }
@@ -573,16 +668,23 @@ public class ASTUtils {
         return containingPackageName;
     }
 
-    public static int getFunctionCallNodeArgumentIndex(IFunctionCallNode functionCallNode, IASNode offsetNode) {
+    public static int getFunctionCallNodeArgumentIndex(IFunctionCallNode functionCallNode, IASNode offsetNode,
+            String fileText, int offset) {
         if (offsetNode == functionCallNode.getArgumentsNode() && offsetNode.getChildCount() == 0) {
-            //there are no arguments yet
+            // there are no arguments yet
             return 0;
         }
-        int indexToFind = offsetNode.getAbsoluteEnd();
         IExpressionNode[] argumentNodes = functionCallNode.getArgumentNodes();
-        for (int i = argumentNodes.length - 1; i >= 0; i--) {
+        int lastIndex = argumentNodes.length - 1;
+        for (int i = lastIndex; i >= 0; i--) {
             IExpressionNode argumentNode = argumentNodes[i];
-            if (indexToFind >= argumentNode.getAbsoluteStart()) {
+            if (offset >= argumentNode.getAbsoluteStart()) {
+                if (offset > argumentNode.getAbsoluteEnd()) {
+                    int nextCommaIndex = fileText.indexOf(',', argumentNode.getAbsoluteEnd());
+                    if (offset > nextCommaIndex && i < lastIndex) {
+                        return i + 1;
+                    }
+                }
                 return i;
             }
         }
@@ -622,6 +724,11 @@ public class ASTUtils {
         return result + "." + identifierNode.getName();
     }
 
+    public static boolean isInActionScriptComment(String code, int currentOffset,
+            int minCommentStartIndex) {
+        return isInActionScriptComment(null, code, currentOffset, minCommentStartIndex);
+    }
+
     private static boolean isInActionScriptComment(IASNode offsetNode, String code, int currentOffset,
             int minCommentStartIndex) {
         if (offsetNode != null && offsetNode.isTerminal()) {
@@ -632,7 +739,19 @@ public class ASTUtils {
             startComment = -1;
         }
         if (startComment != -1) {
-            if (startComment > offsetNode.getAbsoluteStart()) {
+            if (offsetNode == null) {
+                int endComment = code.indexOf("*/", startComment);
+                if (endComment == -1) {
+                    endComment = code.length();
+                }
+                if (startComment < currentOffset && endComment >= currentOffset
+                        && !isInSingleLineComment(code, endComment, minCommentStartIndex)) {
+                    // start and end are both the same node as the offset
+                    // node, and neither is inside single line comments,
+                    // so we're probably inside a multiline comment
+                    return true;
+                }
+            } else if (startComment > offsetNode.getAbsoluteStart()) {
                 IASNode commentNode = getContainingNodeIncludingStart(offsetNode, startComment + 1);
                 if (offsetNode.equals(commentNode)
                         && !isInSingleLineComment(code, startComment, minCommentStartIndex)) {
@@ -640,13 +759,13 @@ public class ASTUtils {
                     if (endComment == -1) {
                         endComment = code.length();
                     }
-                    if (endComment < offsetNode.getAbsoluteEnd()) {
+                    if (endComment < offsetNode.getAbsoluteEnd() && endComment >= currentOffset) {
                         commentNode = getContainingNodeIncludingStart(offsetNode, endComment + 1);
                         if (offsetNode.equals(commentNode)
                                 && !isInSingleLineComment(code, endComment, minCommentStartIndex)) {
-                            //start and end are both the same node as the offset
-                            //node, and neither is inside single line comments,
-                            //so we're probably inside a multiline comment
+                            // start and end are both the same node as the offset
+                            // node, and neither is inside single line comments,
+                            // so we're probably inside a multiline comment
                             return true;
                         }
                     }
@@ -660,15 +779,15 @@ public class ASTUtils {
         int startComment = -1;
         int startLine = code.lastIndexOf('\n', currentOffset - 1);
         if (startLine == -1) {
-            //we're on the first line
+            // we're on the first line
             startLine = 0;
         }
-        //we need to stop searching after the end of the current line
+        // we need to stop searching after the end of the current line
         int endLine = code.indexOf('\n', currentOffset);
         do {
-            //we need to check this in a loop because it's possible for
-            //the start of a single line comment to appear inside multiple
-            //MXML attributes on the same line
+            // we need to check this in a loop because it's possible for
+            // the start of a single line comment to appear inside multiple
+            // MXML attributes on the same line
             startComment = code.indexOf("//", startLine);
             if (startComment != -1 && currentOffset > startComment && startComment >= minCommentStartIndex) {
                 return true;
@@ -706,8 +825,8 @@ public class ASTUtils {
             mxmlNode = (IMXMLSpecifierNode) offsetNode.getAncestorOfType(IMXMLSpecifierNode.class);
         }
         if (mxmlNode != null) {
-            //start in the current MXML node and ignore the start of comments
-            //that appear in earlier MXML nodes
+            // start in the current MXML node and ignore the start of comments
+            // that appear in earlier MXML nodes
             minCommentStartIndex = mxmlNode.getAbsoluteStart();
         }
 
@@ -749,5 +868,43 @@ public class ASTUtils {
             }
         }
         return false;
+    }
+
+    public static boolean isOffsetNodeInsideParameterOfTypeFunction(IASNode offsetNode, String fileText,
+            int currentOffset, ICompilerProject project) {
+
+        IFunctionCallNode functionCallNode = (IFunctionCallNode) offsetNode.getAncestorOfType(IFunctionCallNode.class);
+        if (functionCallNode == null) {
+            return false;
+        }
+        IDefinition calledDefinition = functionCallNode.resolveCalledExpression(project);
+        if (!(calledDefinition instanceof IFunctionDefinition)) {
+            return false;
+        }
+        IFunctionDefinition functionDefinition = (IFunctionDefinition) calledDefinition;
+        int index = ASTUtils.getFunctionCallNodeArgumentIndex(functionCallNode, offsetNode, fileText,
+                currentOffset);
+        IParameterDefinition[] parameterDefs = functionDefinition.getParameters();
+        int paramCount = parameterDefs.length;
+        if (paramCount > 0 && index >= paramCount) {
+            IParameterDefinition lastParam = parameterDefs[paramCount - 1];
+            if (lastParam.isRest()) {
+                // functions with rest parameters may accept any
+                // number of arguments, so continue to make the rest
+                // parameter active
+                index = paramCount - 1;
+            } else {
+                // if there's no rest parameter, and we're beyond the
+                // final parameter, none should be active
+                index = -1;
+            }
+        }
+        if (index == -1 || index >= paramCount) {
+            return false;
+        }
+        IParameterDefinition param = parameterDefs[index];
+        IDefinition paramType = param.resolveType(project);
+        ITypeDefinition functionType = project.getBuiltinType(BuiltinType.FUNCTION);
+        return functionType.equals(paramType);
     }
 }

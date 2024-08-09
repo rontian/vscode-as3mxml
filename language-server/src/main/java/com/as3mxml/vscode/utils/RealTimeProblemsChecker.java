@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -144,8 +144,8 @@ public class RealTimeProblemsChecker implements Runnable {
 			checkForProblems();
 			long waitTime = getWaitTime();
 			try {
-				//wait a short time between checks
-				//it's okay if problems are updated a little slowly
+				// wait a short time between checks
+				// it's okay if problems are updated a little slowly
 				Thread.sleep(waitTime);
 			} catch (InterruptedException e) {
 			}
@@ -157,7 +157,7 @@ public class RealTimeProblemsChecker implements Runnable {
 			return;
 		}
 		if (compilationUnit.getProject() == null) {
-			//this compilation unit is no longer valid
+			// this compilation unit is no longer valid
 			clear();
 			return;
 		}
@@ -194,8 +194,15 @@ public class RealTimeProblemsChecker implements Runnable {
 		}
 
 		if (pendingCompilationUnit == compilationUnit) {
-			IWorkspace workspace = projectData.project.getWorkspace();
-			workspace.fileChanged(pendingFileSpec);
+			if (projectData != null) {
+				ILspProject project = projectData.project;
+				if (project != null) {
+					IWorkspace workspace = project.getWorkspace();
+					if (workspace != null) {
+						workspace.fileChanged(pendingFileSpec);
+					}
+				}
+			}
 		}
 
 		compilationUnit = pendingCompilationUnit;
@@ -229,9 +236,10 @@ public class RealTimeProblemsChecker implements Runnable {
 			}
 
 			ILspProject project = projectData.project;
+			String qualifiedName = CompilationUnitUtils.getPrimaryQualifiedName(compilationUnit);
 			Set<String> requiredImports = project.getQNamesOfDependencies(compilationUnit);
 			IASNode ast = syntaxTreeRequest.get().getAST();
-			ASTUtils.findUnusedImportProblems(ast, requiredImports, problems);
+			ASTUtils.findUnusedImportProblems(ast, qualifiedName, requiredImports, problems);
 			ASTUtils.findDisabledConfigConditionBlockProblems(ast, problems);
 		} catch (Exception e) {
 			System.err.println("Exception in compiler while checking for problems: " + e);

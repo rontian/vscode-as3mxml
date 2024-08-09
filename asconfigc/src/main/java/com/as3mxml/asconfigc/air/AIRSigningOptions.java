@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,8 +24,8 @@ public class AIRSigningOptions {
 	public static final String TSA = "tsa";
 	public static final String PROVISIONING_PROFILE = "provisioning-profile";
 
-	//these aren't real options, but they might exist to provide separate
-	//options for debug and release builds
+	// these aren't real options, but they might exist to provide separate
+	// options for debug and release builds
 	public static final String DEBUG = "debug";
 	public static final String RELEASE = "release";
 }

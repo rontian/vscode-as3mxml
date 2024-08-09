@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.as3mxml.vscode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.nio.file.Path;
@@ -51,8 +52,14 @@ public class Main {
         String port = System.getProperty(SYSTEM_PROPERTY_PORT);
         Socket socket = null;
         try {
+            PrintStream originalSysOut = System.out;
+            if (port == null) {
+                // redirect System.out to System.err because we need to keep
+                // System.out from receiving anything that isn't an LSP message
+                System.setOut(new PrintStream(System.err));
+            }
             InputStream inputStream = System.in;
-            OutputStream outputStream = System.out;
+            OutputStream outputStream = originalSysOut;
             if (port != null) {
                 socket = new Socket(SOCKET_HOST, Integer.parseInt(port));
                 inputStream = socket.getInputStream();
@@ -61,18 +68,19 @@ public class Main {
             ASConfigProjectConfigStrategyFactory configFactory = new ASConfigProjectConfigStrategyFactory();
             ActionScriptLanguageServer server = new ActionScriptLanguageServer(configFactory);
 
-            //to enable LSP inspector output on System.err, change to true
+            // to enable LSP inspector output on System.err, change to true
             boolean lspInspectorTrace = false;
             Launcher<ActionScriptLanguageClient> launcher = null;
             if (lspInspectorTrace) {
-                launcher = Launcher.createLauncher(server, ActionScriptLanguageClient.class, inputStream, outputStream,
-                        true, new PrintWriter(System.err));
+                launcher = Launcher.createLauncher(server, ActionScriptLanguageClient.class, exitOnClose(inputStream),
+                        outputStream, true, new PrintWriter(System.err));
             } else {
-                launcher = Launcher.createLauncher(server, ActionScriptLanguageClient.class, inputStream, outputStream);
+                launcher = Launcher.createLauncher(server, ActionScriptLanguageClient.class, exitOnClose(inputStream),
+                        outputStream);
             }
 
             server.connect(launcher.getRemoteProxy());
-            launcher.startListening();
+            launcher.startListening().get();
         } catch (Exception e) {
             System.err.println("ActionScript & MXML language server failed to connect.");
             System.err.println(
@@ -88,6 +96,23 @@ public class Main {
                 }
             }
         }
+    }
+
+    private static InputStream exitOnClose(InputStream delegate) {
+        return new InputStream() {
+            @Override
+            public int read() throws IOException {
+                return exitIfNegative(delegate.read());
+            }
+
+            int exitIfNegative(int result) {
+                if (result < 0) {
+                    System.err.println("AS3 & MXML input stream has closed. Exiting...");
+                    System.exit(0);
+                }
+                return result;
+            }
+        };
     }
 
     private static class ASConfigProjectConfigStrategyFactory implements IProjectConfigStrategyFactory {

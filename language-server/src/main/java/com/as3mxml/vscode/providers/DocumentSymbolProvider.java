@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -78,7 +78,7 @@ public class DocumentSymbolProvider {
             if (cancelToken != null) {
                 cancelToken.checkCanceled();
             }
-            //we couldn't find a compilation unit with the specified path
+            // we couldn't find a compilation unit with the specified path
             return Collections.emptyList();
         }
 
@@ -100,7 +100,7 @@ public class DocumentSymbolProvider {
             for (DocumentSymbol symbol : symbols) {
                 result.add(Either.forRight(symbol));
             }
-        } else //fallback to non-hierarchical
+        } else // fallback to non-hierarchical
         {
             List<SymbolInformation> symbols = new ArrayList<>();
             for (IASScope scope : scopes) {
@@ -117,8 +117,8 @@ public class DocumentSymbolProvider {
     }
 
     private void scopeToSymbolInformation(IASScope scope, ILspProject project, List<SymbolInformation> result) {
-        Collection<IDefinition> definitions = scope.getAllLocalDefinitions();
-        for (IDefinition definition : definitions) {
+        Collection<IDefinition> localDefs = new ArrayList<>(scope.getAllLocalDefinitions());
+        for (IDefinition definition : localDefs) {
             if (definition instanceof IPackageDefinition) {
                 IPackageDefinition packageDefinition = (IPackageDefinition) definition;
                 IASScope packageScope = packageDefinition.getContainedScope();
@@ -147,8 +147,8 @@ public class DocumentSymbolProvider {
     }
 
     private void scopeToDocumentSymbols(IASScope scope, ILspProject project, List<DocumentSymbol> result) {
-        Collection<IDefinition> definitions = scope.getAllLocalDefinitions();
-        for (IDefinition definition : definitions) {
+        Collection<IDefinition> localDefs = new ArrayList<>(scope.getAllLocalDefinitions());
+        for (IDefinition definition : localDefs) {
             if (definition instanceof IPackageDefinition) {
                 IPackageDefinition packageDefinition = (IPackageDefinition) definition;
                 IASScope packageScope = packageDefinition.getContainedScope();

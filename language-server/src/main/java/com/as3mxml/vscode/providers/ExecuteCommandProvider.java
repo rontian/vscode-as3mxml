@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,30 +26,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
-
-import com.as3mxml.asconfigc.compiler.ProjectType;
-import com.as3mxml.vscode.commands.ICommandConstants;
-import com.as3mxml.vscode.project.ILspProject;
-import com.as3mxml.vscode.project.ActionScriptProjectData;
-import com.as3mxml.vscode.services.ActionScriptLanguageClient;
-import com.as3mxml.vscode.utils.ASTUtils;
-import com.as3mxml.vscode.utils.CodeActionsUtils;
-import com.as3mxml.vscode.utils.CompilerProjectUtils;
-import com.as3mxml.vscode.utils.FileTracker;
-import com.as3mxml.vscode.utils.ImportRange;
-import com.as3mxml.vscode.utils.ImportTextEditUtils;
-import com.as3mxml.vscode.utils.LanguageServerCompilerUtils;
-import com.as3mxml.vscode.utils.MXMLDataUtils;
-import com.as3mxml.vscode.utils.ActionScriptProjectManager;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 
 import org.apache.royale.compiler.definitions.IDefinition;
 import org.apache.royale.compiler.filespecs.IFileSpecification;
 import org.apache.royale.compiler.internal.mxml.MXMLData;
 import org.apache.royale.compiler.internal.workspaces.Workspace;
 import org.apache.royale.compiler.mxml.IMXMLTagData;
+import org.apache.royale.compiler.projects.ICompilerProject;
 import org.apache.royale.compiler.tree.as.IASNode;
 import org.apache.royale.compiler.tree.as.IImportNode;
 import org.apache.royale.compiler.units.ICompilationUnit;
@@ -62,6 +47,28 @@ import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 
+import com.as3mxml.asconfigc.compiler.ProjectType;
+import com.as3mxml.vscode.commands.ICommandConstants;
+import com.as3mxml.vscode.project.ActionScriptProjectData;
+import com.as3mxml.vscode.project.ILspProject;
+import com.as3mxml.vscode.services.ActionScriptLanguageClient;
+import com.as3mxml.vscode.utils.ASTUtils;
+import com.as3mxml.vscode.utils.ActionScriptProjectManager;
+import com.as3mxml.vscode.utils.CodeActionsUtils;
+import com.as3mxml.vscode.utils.CompilationUnitUtils;
+import com.as3mxml.vscode.utils.CompilerProjectUtils;
+import com.as3mxml.vscode.utils.DefinitionTextUtils;
+import com.as3mxml.vscode.utils.DefinitionTextUtils.DefinitionAsText;
+import com.as3mxml.vscode.utils.DefinitionURI;
+import com.as3mxml.vscode.utils.FileTracker;
+import com.as3mxml.vscode.utils.ImportRange;
+import com.as3mxml.vscode.utils.ImportTextEditUtils;
+import com.as3mxml.vscode.utils.LanguageServerCompilerUtils;
+import com.as3mxml.vscode.utils.MXMLDataUtils;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+
 public class ExecuteCommandProvider {
     private static final String FILE_EXTENSION_MXML = ".mxml";
     private static final String FILE_EXTENSION_AS = ".as";
@@ -71,6 +78,12 @@ public class ExecuteCommandProvider {
     private Workspace compilerWorkspace;
     private ActionScriptLanguageClient languageClient;
     private boolean concurrentRequests;
+
+    public boolean organizeImports_addMissingImports = true;
+    public boolean organizeImports_removeUnusedImports = true;
+    public boolean organizeImports_insertNewLineBetweenTopLevelPackages = true;
+
+    public Consumer<String> setPreferredRoyaleTargetCallback = null;
 
     public ExecuteCommandProvider(ActionScriptProjectManager actionScriptProjectManager, FileTracker fileTracker,
             Workspace compilerWorkspace, ActionScriptLanguageClient languageClient, boolean concurrentRequests) {
@@ -95,8 +108,23 @@ public class ExecuteCommandProvider {
             case ICommandConstants.ORGANIZE_IMPORTS_IN_DIRECTORY: {
                 return executeOrganizeImportsInDirectoryCommand(params);
             }
+            case ICommandConstants.REMOVE_UNUSED_IMPORTS_IN_URI: {
+                return executeOrganizeImportsInUriCommand(params);
+            }
+            case ICommandConstants.ADD_MISSING_IMPORTS_IN_URI: {
+                return executeOrganizeImportsInUriCommand(params);
+            }
+            case ICommandConstants.SORT_IMPORTS_IN_URI: {
+                return executeOrganizeImportsInUriCommand(params);
+            }
             case ICommandConstants.GET_ACTIVE_PROJECT_URIS: {
                 return executeGetActiveProjectUrisCommand(params);
+            }
+            case ICommandConstants.GET_LIBRARY_DEFINITION_TEXT: {
+                return executeGetLibraryDefinitionTextCommand(params);
+            }
+            case ICommandConstants.SET_ROYALE_PREFERRED_TARGET: {
+                return executeSetRoyalePreferredTargetCommand(params);
             }
             default: {
                 System.err.println("Unknown command: " + params.getCommand());
@@ -145,7 +173,7 @@ public class ExecuteCommandProvider {
             File[] files = currentDir.listFiles();
             for (File file : files) {
                 if (file.isDirectory()) {
-                    //add this directory to the list to search
+                    // add this directory to the list to search
                     directories.add(file);
                     continue;
                 }
@@ -175,7 +203,7 @@ public class ExecuteCommandProvider {
             }
             Map<String, List<TextEdit>> changes = new HashMap<>();
             for (String fileURI : fileURIs) {
-                organizeImportsInUri(fileURI, changes);
+                organizeImportsInUri(fileURI, OrganizeImportsKind.ORGANIZE, changes);
             }
 
             if (changes.keySet().size() > 0) {
@@ -214,6 +242,19 @@ public class ExecuteCommandProvider {
         JsonObject uriObject = (JsonObject) args.get(0);
         String uri = uriObject.get("external").getAsString();
 
+        OrganizeImportsKind kind = OrganizeImportsKind.ORGANIZE;
+        switch (params.getCommand()) {
+            case ICommandConstants.REMOVE_UNUSED_IMPORTS_IN_URI:
+                kind = OrganizeImportsKind.REMOVE_ONLY;
+                break;
+            case ICommandConstants.ADD_MISSING_IMPORTS_IN_URI:
+                kind = OrganizeImportsKind.ADD_ONLY;
+                break;
+            case ICommandConstants.SORT_IMPORTS_IN_URI:
+                kind = OrganizeImportsKind.SORT_ONLY;
+                break;
+        }
+
         Path path = LanguageServerCompilerUtils.getPathFromLanguageServerURI(uri);
         if (path == null) {
             if (cancelToken != null) {
@@ -235,7 +276,7 @@ public class ExecuteCommandProvider {
             }
 
             Map<String, List<TextEdit>> changes = new HashMap<>();
-            organizeImportsInUri(uri, changes);
+            organizeImportsInUri(uri, kind, changes);
 
             if (changes.keySet().size() > 0) {
                 editParams = new ApplyWorkspaceEditParams();
@@ -260,32 +301,40 @@ public class ExecuteCommandProvider {
 
     private void openFileForOrganizeImports(Path path) {
         if (fileTracker.isOpen(path)) {
-            //already opened
+            // already opened
             return;
         }
 
-        //if the file isn't open in an editor, we need to read it from the
-        //file system instead.
+        // if the file isn't open in an editor, we need to read it from the
+        // file system instead.
         String text = fileTracker.getText(path);
         if (text == null) {
             return;
         }
 
-        //for some reason, the full AST is not populated if the file is not
-        //already open in the editor. we use a similar workaround to didOpen
-        //to force the AST to be populated.
+        // for some reason, the full AST is not populated if the file is not
+        // already open in the editor. we use a similar workaround to didOpen
+        // to force the AST to be populated.
 
-        //we'll clear this out later before we return from this function
+        // we'll clear this out later before we return from this function
         fileTracker.openFile(path, text);
 
-        //notify the workspace that it should read the file from memory
-        //instead of loading from the file system
+        // notify the workspace that it should read the file from memory
+        // instead of loading from the file system
         String normalizedPath = FilenameNormalization.normalize(path.toAbsolutePath().toString());
         IFileSpecification fileSpec = fileTracker.getFileSpecification(normalizedPath);
         compilerWorkspace.fileChanged(fileSpec);
     }
 
-    private void organizeImportsInUri(String uri, Map<String, List<TextEdit>> changes) {
+    public static enum OrganizeImportsKind {
+        ORGANIZE,
+        REMOVE_ONLY,
+        ADD_ONLY,
+        SORT_ONLY,
+    }
+
+    private void organizeImportsInUri(String uri, OrganizeImportsKind kind,
+            Map<String, List<TextEdit>> changes) {
         Path path = LanguageServerCompilerUtils.getPathFromLanguageServerURI(uri);
         if (path == null) {
             return;
@@ -306,14 +355,38 @@ public class ExecuteCommandProvider {
             return;
         }
 
+        boolean sortImports = false;
+        boolean addMissing = false;
+        boolean removeUnused = false;
+        switch (kind) {
+            case REMOVE_ONLY:
+                removeUnused = true;
+                break;
+            case ADD_ONLY:
+                addMissing = true;
+                break;
+            case SORT_ONLY:
+                sortImports = true;
+                break;
+            case ORGANIZE:
+                addMissing = organizeImports_addMissingImports;
+                removeUnused = organizeImports_removeUnusedImports;
+                sortImports = true;
+                break;
+        }
         Set<String> missingNames = null;
         Set<String> importsToAdd = null;
         List<IImportNode> importsToRemove = null;
         IASNode ast = ASTUtils.getCompilationUnitAST(unit);
         if (ast != null) {
-            missingNames = ASTUtils.findUnresolvedIdentifiersToImport(ast, project);
-            Set<String> requiredImports = project.getQNamesOfDependencies(unit);
-            importsToRemove = ASTUtils.findImportNodesToRemove(ast, requiredImports);
+            if (addMissing) {
+                missingNames = ASTUtils.findUnresolvedIdentifiersToImport(ast, project);
+            }
+            if (removeUnused) {
+                String qualifiedName = CompilationUnitUtils.getPrimaryQualifiedName(unit);
+                Set<String> requiredImports = project.getQNamesOfDependencies(unit);
+                importsToRemove = ASTUtils.findImportNodesToRemove(ast, qualifiedName, requiredImports);
+            }
         }
         if (missingNames != null) {
             importsToAdd = new HashSet<>();
@@ -321,14 +394,15 @@ public class ExecuteCommandProvider {
             for (String missingName : missingNames) {
                 List<IDefinition> definitions = ASTUtils.findDefinitionsThatMatchName(missingName, false, units);
                 if (definitions.size() == 1) {
-                    //add an import only if exactly one type is found
+                    // add an import only if exactly one type is found
                     importsToAdd.add(definitions.get(0).getQualifiedName());
                 }
             }
         }
-        List<TextEdit> edits = ImportTextEditUtils.organizeImports(text, importsToRemove, importsToAdd);
+        List<TextEdit> edits = ImportTextEditUtils.organizeImports(text, importsToRemove, importsToAdd, sortImports,
+                organizeImports_insertNewLineBetweenTopLevelPackages);
         if (edits == null || edits.size() == 0) {
-            //no edit required
+            // no edit required
             return;
         }
         changes.put(uri, edits);
@@ -398,7 +472,7 @@ public class ExecuteCommandProvider {
             WorkspaceEdit workspaceEdit = CodeActionsUtils.createWorkspaceEditForAddImport(qualifiedName, text, uri,
                     importRange);
             if (workspaceEdit == null) {
-                //no edit required
+                // no edit required
                 return new Object();
             }
 
@@ -463,7 +537,7 @@ public class ExecuteCommandProvider {
                 if (cancelToken != null) {
                     cancelToken.checkCanceled();
                 }
-                //no edit required
+                // no edit required
                 return new Object();
             }
 
@@ -484,8 +558,49 @@ public class ExecuteCommandProvider {
         List<Object> args = params.getArguments();
         final boolean appsOnly = args.size() > 0 && ((JsonPrimitive) args.get(0)).getAsBoolean();
         List<String> result = actionScriptProjectManager.getAllProjectData().stream()
-                .filter(projectData -> appsOnly ? ProjectType.APP.equals(projectData.options.type) : true)
+                .filter(projectData -> appsOnly
+                        ? (projectData.options != null && ProjectType.APP.equals(projectData.options.type))
+                        : true)
                 .map(projectData -> projectData.projectRoot.toUri().toString()).collect(Collectors.toList());
         return CompletableFuture.completedFuture(result);
+    }
+
+    private CompletableFuture<Object> executeGetLibraryDefinitionTextCommand(ExecuteCommandParams params) {
+        List<Object> args = params.getArguments();
+        String encodedQuery = ((JsonPrimitive) args.get(0)).getAsString();
+        DefinitionURI decodedQuery = DefinitionURI.decode(encodedQuery, actionScriptProjectManager);
+        String symbolName = "Unknown";
+        if (decodedQuery != null) {
+            IDefinition definition = decodedQuery.definition;
+            ICompilerProject project = decodedQuery.project;
+            if (definition != null && project != null) {
+                symbolName = definition.getQualifiedName();
+                DefinitionAsText definitionText = DefinitionTextUtils.definitionToTextDocument(
+                        definition, project, decodedQuery.includeASDoc);
+                if (definitionText != null) {
+                    return CompletableFuture.completedFuture(definitionText.text);
+                }
+            }
+            StringBuilder errorBuilder = new StringBuilder();
+            errorBuilder.append("// Generated from: ");
+            errorBuilder.append(decodedQuery.swcFilePath);
+            errorBuilder.append("\n// Failed to resolve definition: ");
+            errorBuilder.append(symbolName);
+            return CompletableFuture.completedFuture(errorBuilder.toString());
+        }
+        return CompletableFuture.completedFuture("// Failed to resolve definition");
+    }
+
+    private CompletableFuture<Object> executeSetRoyalePreferredTargetCommand(ExecuteCommandParams params) {
+        List<Object> args = params.getArguments();
+        JsonElement jsonPreferredTarget = (JsonElement) args.get(0);
+        String preferredTarget = null;
+        if (!jsonPreferredTarget.isJsonNull()) {
+            preferredTarget = jsonPreferredTarget.getAsString();
+        }
+        if (setPreferredRoyaleTargetCallback != null) {
+            setPreferredRoyaleTargetCallback.accept(preferredTarget);
+        }
+        return CompletableFuture.completedFuture(new Object());
     }
 }

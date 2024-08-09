@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ public class ImplementationProvider {
 
     private List<? extends Location> actionScriptImplementation(IASNode offsetNode, ILspProject project) {
         if (offsetNode == null) {
-            //we couldn't find a node at the specified location
+            // we couldn't find a node at the specified location
             return Collections.emptyList();
         }
 
@@ -131,8 +131,8 @@ public class ImplementationProvider {
         }
 
         if (interfaceDefinition == null) {
-            //VSCode may call typeDefinition() when there isn't necessarily a
-            //type definition referenced at the current position.
+            // VSCode may call implementation() when there isn't necessarily a
+            // type definition referenced at the current position.
             return Collections.emptyList();
         }
 
@@ -149,7 +149,7 @@ public class ImplementationProvider {
             try {
                 definitions = unit.getFileScopeRequest().get().getExternallyVisibleDefinitions();
             } catch (Exception e) {
-                //safe to ignore
+                // safe to ignore
                 continue;
             }
 
@@ -159,7 +159,7 @@ public class ImplementationProvider {
                 }
                 IClassDefinition classDefinition = (IClassDefinition) definition;
                 if (DefinitionUtils.isImplementationOfInterface(classDefinition, interfaceDefinition, project)) {
-                    Location location = actionScriptProjectManager.getLocationFromDefinition(classDefinition, project);
+                    Location location = actionScriptProjectManager.definitionToLocation(classDefinition, project);
                     if (location != null) {
                         result.add(location);
                     }

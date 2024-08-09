@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 import * as vscode from "vscode";
-import * as json5 from "json5";
 import * as path from "path";
 import * as fs from "fs";
+import json5 from "json5/dist/index.mjs";
 
 const ASCONFIG_JSON = "asconfig.json";
 const FILE_EXTENSION_AS = ".as";
@@ -28,6 +28,8 @@ const FIELD_ANIMATE_OPTIONS = "animateOptions";
 const FIELD_FILE = "file";
 const FIELD_APPLICATION = "application";
 const FIELD_AIR_OPTIONS = "airOptions";
+const FIELD_TYPE = "type";
+const TYPE_LIB = "lib";
 
 export default class BaseAsconfigTaskProvider {
   constructor(
@@ -145,19 +147,7 @@ export default class BaseAsconfigTaskProvider {
     if (!jsonURI) {
       return undefined;
     }
-    let rootJSON = path.resolve(workspaceURI.fsPath, ASCONFIG_JSON);
-    if (rootJSON === jsonURI.fsPath) {
-      //the asconfig field should remain empty if it's the root
-      //asconfig.json in the workspace.
-      //this is different than TypeScript because we didn't originally
-      //create tasks for additional asconfig files in the workspace, and
-      //we don't want to break old tasks.json files that already existed
-      //before this feature was added.
-      //ideally, we'd be able to use resolveTask() to populate the
-      //asconfig field, but that function never seems to be called.
-      return undefined;
-    }
-    return jsonURI.toString().substr(workspaceURI.toString().length + 1);
+    return jsonURI.toString().substring(workspaceURI.toString().length + 1);
   }
 
   protected readASConfigJSON(jsonURI: vscode.Uri) {
@@ -175,6 +165,14 @@ export default class BaseAsconfigTaskProvider {
       console.error(`Error reading file: ${jsonPath}. ${error}`);
     }
     return null;
+  }
+
+  protected isLibrary(asconfigJson: any): boolean {
+    if (!(FIELD_TYPE in asconfigJson)) {
+      return false;
+    }
+    let type = asconfigJson[FIELD_TYPE];
+    return type === TYPE_LIB;
   }
 
   protected isAnimate(asconfigJson: any): boolean {

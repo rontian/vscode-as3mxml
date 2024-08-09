@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,11 +16,15 @@ limitations under the License.
 import * as vscode from "vscode";
 
 export default class SWCTextDocumentContentProvider
-  implements vscode.TextDocumentContentProvider {
+  implements vscode.TextDocumentContentProvider
+{
   provideTextDocumentContent(
     uri: vscode.Uri,
     token: vscode.CancellationToken
   ): vscode.ProviderResult<string> {
-    return decodeURIComponent(uri.query);
+    return vscode.commands.executeCommand(
+      "as3mxml.getLibraryDefinitionText",
+      uri.query
+    );
   }
 }

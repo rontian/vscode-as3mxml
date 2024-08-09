@@ -35,10 +35,16 @@ import org.apache.royale.compiler.asdoc.IASDocComment;
 import org.apache.royale.compiler.asdoc.IPackageDITAParser;
 import org.apache.royale.compiler.definitions.IAccessorDefinition;
 import org.apache.royale.compiler.definitions.IDefinition;
+import org.apache.royale.compiler.definitions.IEventDefinition;
 import org.apache.royale.compiler.definitions.IFunctionDefinition;
+import org.apache.royale.compiler.definitions.IInterfaceDefinition;
+import org.apache.royale.compiler.definitions.IMetadataDefinition;
+import org.apache.royale.compiler.definitions.INamespaceDefinition;
 import org.apache.royale.compiler.definitions.IPackageDefinition;
+import org.apache.royale.compiler.definitions.IStyleDefinition;
 import org.apache.royale.compiler.definitions.ITypeDefinition;
 import org.apache.royale.compiler.definitions.IVariableDefinition;
+import org.apache.royale.compiler.definitions.references.INamespaceReference;
 import org.apache.royale.compiler.workspaces.IWorkspace;
 import org.apache.royale.swc.ISWC;
 import org.apache.royale.swc.dita.IDITAEntry;
@@ -51,7 +57,8 @@ import org.dom4j.Element;
 import org.dom4j.io.SAXReader;
 
 /**
- * A custom implementation of IPackageDITAParser for the AS3 & MXML language server.
+ * A custom implementation of IPackageDITAParser for the AS3 & MXML language
+ * server.
  */
 public final class VSCodePackageDITAParser implements IPackageDITAParser {
 	private IWorkspace workspace;
@@ -70,7 +77,8 @@ public final class VSCodePackageDITAParser implements IPackageDITAParser {
 		}
 
 		final ArrayList<String> entryHrefs = new ArrayList<>();
-		for (Element apiItemRefElement : xmlDoc.getRootElement().elements("apiItemRef")) {
+		for (Object element : xmlDoc.getRootElement().elements("apiItemRef")) {
+			Element apiItemRefElement = (Element) element;
 			Attribute hrefAttribute = apiItemRefElement.attribute("href");
 			if (hrefAttribute != null) {
 				entryHrefs.add(hrefAttribute.getStringValue());
@@ -96,25 +104,44 @@ public final class VSCodePackageDITAParser implements IPackageDITAParser {
 			@Override
 			public IASDocComment getComment(IDefinition definition) throws Exception {
 				Element defElement = null;
-				IDefinition parentDef = definition.getParent();
-				if (parentDef instanceof IPackageDefinition || parentDef == null) {
-					defElement = getDefinitionDITAFromPackageDITA(definition);
-				} else if (parentDef instanceof ITypeDefinition) {
-					defElement = getDefinitionDITAFromTypeDITA(definition);
+				if (definition instanceof IMetadataDefinition) {
+					IMetadataDefinition metadataDefinition = (IMetadataDefinition) definition;
+					IDefinition decoratedDefinition = metadataDefinition.getDecoratedDefinition();
+					if (decoratedDefinition instanceof ITypeDefinition) {
+						ITypeDefinition typeDefinition = (ITypeDefinition) decoratedDefinition;
+						defElement = getDefinitionDITAFromParentTypeDef(definition, typeDefinition);
+					}
+				} else {
+					IDefinition parentDef = definition.getParent();
+					if (parentDef instanceof IPackageDefinition || parentDef == null) {
+						defElement = getDefinitionDITAFromPackageDITA(definition);
+					} else if (parentDef instanceof ITypeDefinition) {
+						ITypeDefinition parentDefinition = (ITypeDefinition) parentDef;
+						defElement = getDefinitionDITAFromParentTypeDef(definition, parentDefinition);
+					}
 				}
 				if (defElement == null) {
 					return null;
 				}
 				String defName = defElement.getName();
-				Element apiDetailElement = defElement.element(defName + "Detail");
-				if (apiDetailElement == null) {
-					return null;
+				String description = null;
+				if (definition instanceof IStyleDefinition) {
+					Element descriptionElement = defElement.element("description");
+					if (descriptionElement == null) {
+						return null;
+					}
+					description = descriptionElement.asXML();
+				} else {
+					Element apiDetailElement = defElement.element(defName + "Detail");
+					if (apiDetailElement == null) {
+						return null;
+					}
+					Element apiDescElement = apiDetailElement.element("apiDesc");
+					if (apiDescElement == null) {
+						return null;
+					}
+					description = apiDescElement.asXML();
 				}
-				Element apiDescElement = apiDetailElement.element("apiDesc");
-				if (apiDescElement == null) {
-					return null;
-				}
-				String description = apiDescElement.asXML();
 				StringBuilder builder = new StringBuilder();
 				builder.append("/**");
 				BufferedReader reader = new BufferedReader(new StringReader(description));
@@ -123,33 +150,77 @@ public final class VSCodePackageDITAParser implements IPackageDITAParser {
 					builder.append("\n * ");
 					builder.append(line);
 				}
-				if ("apiOperation".equals(defName) || "apiConstructor".equals(defName)) {
-					Element apiDefElement = apiDetailElement.element(defName + "Def");
-					if (apiDefElement != null) {
-						for (Element apiParamElement : apiDefElement.elements("apiParam")) {
-							Element apiItemNameElement = apiParamElement.element("apiItemName");
-							builder.append("\n * @param ");
-							if (apiItemNameElement == null) {
-								builder.append("_");
-							} else {
-								builder.append(apiItemNameElement.getStringValue());
-								Element paramApiDescElement = apiParamElement.element("apiDesc");
-								if (paramApiDescElement != null) {
-									String paramDescription = paramApiDescElement.getStringValue();
-									paramDescription = paramDescription.replaceAll("\n", " ");
-									builder.append(" ");
-									builder.append(paramDescription);
+				if ("apiValue".equals(defName)) {
+					Element apiDetailElement = defElement.element(defName + "Detail");
+					if (apiDetailElement != null) {
+						Element apiDefElement = apiDetailElement.element(defName + "Def");
+						if (apiDefElement != null) {
+							Element apiDefaultValueElement = apiDefElement.element("apiDefaultValue");
+							if (apiDefaultValueElement != null) {
+								String defaultDescription = apiDefaultValueElement.getStringValue();
+								defaultDescription = defaultDescription.replaceAll("\n", " ");
+								builder.append("\n * @default ");
+								builder.append(defaultDescription);
+							}
+						}
+					}
+				}
+				if ("apiValue".equals(defName) || "apiOperation".equals(defName) || "apiConstructor".equals(defName)) {
+					Element apiDetailElement = defElement.element(defName + "Detail");
+					if (apiDetailElement != null) {
+						Element apiDefElement = apiDetailElement.element(defName + "Def");
+						if (apiDefElement != null) {
+							for (Object element : apiDefElement.elements("apiException")) {
+								Element apiExceptionElement = (Element) element;
+								Element apiItemNameElement = apiExceptionElement.element("apiItemName");
+								builder.append("\n * @throws ");
+								if (apiItemNameElement == null) {
+									builder.append("_");
+								} else {
+									builder.append(apiItemNameElement.getStringValue());
+									Element paramApiDescElement = apiExceptionElement.element("apiDesc");
+									if (paramApiDescElement != null) {
+										String paramDescription = paramApiDescElement.getStringValue();
+										paramDescription = paramDescription.replaceAll("\n", " ");
+										builder.append(" ");
+										builder.append(paramDescription);
+									}
 								}
 							}
 						}
-						Element apiReturnElement = apiDefElement.element("apiReturn");
-						if (apiReturnElement != null) {
-							Element returnApiDescElement = apiReturnElement.element("apiDesc");
-							if (returnApiDescElement != null) {
-								String returnDescription = returnApiDescElement.getStringValue();
-								returnDescription = returnDescription.replaceAll("\n", " ");
-								builder.append("\n * @return ");
-								builder.append(returnDescription);
+					}
+				}
+				if ("apiOperation".equals(defName) || "apiConstructor".equals(defName)) {
+					Element apiDetailElement = defElement.element(defName + "Detail");
+					if (apiDetailElement != null) {
+						Element apiDefElement = apiDetailElement.element(defName + "Def");
+						if (apiDefElement != null) {
+							for (Object element : apiDefElement.elements("apiParam")) {
+								Element apiParamElement = (Element) element;
+								Element apiItemNameElement = apiParamElement.element("apiItemName");
+								builder.append("\n * @param ");
+								if (apiItemNameElement == null) {
+									builder.append("_");
+								} else {
+									builder.append(apiItemNameElement.getStringValue());
+									Element paramApiDescElement = apiParamElement.element("apiDesc");
+									if (paramApiDescElement != null) {
+										String paramDescription = paramApiDescElement.getStringValue();
+										paramDescription = paramDescription.replaceAll("\n", " ");
+										builder.append(" ");
+										builder.append(paramDescription);
+									}
+								}
+							}
+							Element apiReturnElement = apiDefElement.element("apiReturn");
+							if (apiReturnElement != null) {
+								Element returnApiDescElement = apiReturnElement.element("apiDesc");
+								if (returnApiDescElement != null) {
+									String returnDescription = returnApiDescElement.getStringValue();
+									returnDescription = returnDescription.replaceAll("\n", " ");
+									builder.append("\n * @return ");
+									builder.append(returnDescription);
+								}
 							}
 						}
 					}
@@ -158,10 +229,47 @@ public final class VSCodePackageDITAParser implements IPackageDITAParser {
 				return new VSCodeASDocComment(builder.toString());
 			}
 
-			private Element getDefinitionDITAFromTypeDITA(IDefinition definition) {
-				ITypeDefinition typeDef = (ITypeDefinition) definition.getParent();
+			private Element getDefinitionDITAFromParentTypeDef(IDefinition definition, ITypeDefinition typeDef) {
 				Element parentElement = getDefinitionDITAFromPackageDITA(typeDef);
 				if (parentElement == null) {
+					return null;
+				}
+				if (definition instanceof IEventDefinition) {
+					String eventName = definition.getBaseName();
+					for (Object adobeApiEventElement : parentElement.elements("adobeApiEvent")) {
+						Element childElement = (Element) adobeApiEventElement;
+						Element apiNameElement = childElement.element("apiName");
+						if (apiNameElement != null) {
+							if (eventName.equals(apiNameElement.getText())) {
+								return childElement;
+							}
+						}
+					}
+					return null;
+				}
+				if (definition instanceof IStyleDefinition) {
+					String styleName = definition.getBaseName();
+					Element prologElement = parentElement.element("prolog");
+					if (prologElement == null) {
+						return null;
+					}
+					Element asMetadataElement = prologElement.element("asMetadata");
+					if (asMetadataElement == null) {
+						return null;
+					}
+					Element stylesElement = asMetadataElement.element("styles");
+					if (stylesElement == null) {
+						return null;
+					}
+					for (Object styleElement : stylesElement.elements("style")) {
+						Element childElement = (Element) styleElement;
+						Attribute nameAttribute = childElement.attribute("name");
+						if (nameAttribute != null) {
+							if (nameAttribute.getStringValue().equals(styleName)) {
+								return childElement;
+							}
+						}
+					}
 					return null;
 				}
 				StringBuilder builder = new StringBuilder();
@@ -170,6 +278,20 @@ public final class VSCodePackageDITAParser implements IPackageDITAParser {
 					builder.append(":");
 				}
 				builder.append(typeDef.getBaseName());
+				if (typeDef instanceof IInterfaceDefinition) {
+					builder.append(":");
+					builder.append(typeDef.getPackageName());
+					builder.append(":");
+					builder.append(typeDef.getBaseName());
+				} else {
+					INamespaceReference nsRef = definition.getNamespaceReference();
+					if (nsRef != null && nsRef instanceof INamespaceDefinition) {
+						INamespaceDefinition nsDef = (INamespaceDefinition) nsRef;
+						if ("http://adobe.com/AS3/2006/builtin".equals(nsDef.getURI())) {
+							builder.append(":AS3");
+						}
+					}
+				}
 				builder.append(":");
 				builder.append(definition.getBaseName());
 				if (definition instanceof IAccessorDefinition) {
@@ -186,16 +308,29 @@ public final class VSCodePackageDITAParser implements IPackageDITAParser {
 						elementName = "apiOperation";
 					}
 				}
-				String definitionID = builder.toString();
+				if (elementName == null) {
+					return null;
+				}
 
-				for (Element childElement : parentElement.elements(elementName)) {
+				String definitionID = builder.toString();
+				String altDefinitionID = null;
+				if (definition instanceof IAccessorDefinition) {
+					altDefinitionID = definitionID.substring(0, definitionID.length() - 4) + ":set";
+				}
+
+				for (Object element : parentElement.elements(elementName)) {
+					Element childElement = (Element) element;
 					Attribute idAttribute = childElement.attribute("id");
-					if (idAttribute != null && idAttribute.getStringValue().equals(definitionID)) {
-						return childElement;
+					if (idAttribute != null) {
+						if (idAttribute.getStringValue().equals(definitionID)) {
+							return childElement;
+						}
+						if (altDefinitionID != null && idAttribute.getStringValue().equals(altDefinitionID)) {
+							return childElement;
+						}
 					}
 				}
 				return null;
-
 			}
 
 			private Element getDefinitionDITAFromPackageDITA(IDefinition definition) {
@@ -231,7 +366,8 @@ public final class VSCodePackageDITAParser implements IPackageDITAParser {
 				builder.append(definition.getBaseName());
 				String definitionID = builder.toString();
 
-				for (Element childElement : xmlDoc.getRootElement().elements(elementName)) {
+				for (Object element : xmlDoc.getRootElement().elements(elementName)) {
+					Element childElement = (Element) element;
 					Attribute idAttribute = childElement.attribute("id");
 					if (idAttribute != null && idAttribute.getStringValue().equals(definitionID)) {
 						return childElement;

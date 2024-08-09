@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,8 +34,8 @@ public class ScopeUtils {
             ICompilerProject project) {
         Set<INamespaceDefinition> namespaceSet = new HashSet<>(otherScope.getNamespaceSet(project));
         if (typeScope.getContainingDefinition() instanceof IInterfaceDefinition) {
-            //interfaces have a special namespace that isn't actually the same
-            //as public, but should be treated the same way
+            // interfaces have a special namespace that isn't actually the same
+            // as public, but should be treated the same way
             IInterfaceDefinition interfaceDefinition = (IInterfaceDefinition) typeScope.getContainingDefinition();
             collectInterfaceNamespaces(interfaceDefinition, namespaceSet, project);
         }
@@ -46,9 +46,9 @@ public class ScopeUtils {
                 boolean isSuperClass = Arrays.asList(otherContainingClass.resolveAncestry(project))
                         .contains(classDefinition);
                 if (isSuperClass) {
-                    //if the containing class of the type scope is a superclass
-                    //of the other scope, we need to add the protected
-                    //namespaces from the super classes
+                    // if the containing class of the type scope is a superclass
+                    // of the other scope, we need to add the protected
+                    // namespaces from the super classes
                     do {
                         namespaceSet.add(classDefinition.getProtectedNamespaceReference());
                         classDefinition = classDefinition.resolveBaseClass(project);

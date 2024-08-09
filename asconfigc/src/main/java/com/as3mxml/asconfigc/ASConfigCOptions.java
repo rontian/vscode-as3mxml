@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,19 +19,21 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.as3mxml.asconfigc.air.AIRPlatform;
 import com.as3mxml.asconfigc.compiler.DefaultCompiler;
 import com.as3mxml.asconfigc.compiler.IASConfigCCompiler;
 
 import org.apache.commons.cli.CommandLine;
 
 public class ASConfigCOptions {
-	private static final String OPTION_PROJECT = "p"; //CommandLine uses the short name
+	private static final String OPTION_PROJECT = "p"; // CommandLine uses the short name
 	private static final String OPTION_SDK = "sdk";
 	private static final String OPTION_DEBUG = "debug";
 	private static final String OPTION_AIR = "air";
 	private static final String OPTION_STOREPASS = "storepass";
 	private static final String OPTION_UNPACKAGE_ANES = "unpackage-anes";
 	private static final String OPTION_CLEAN = "clean";
+	private static final String OPTION_WATCH = "watch";
 	private static final String OPTION_ANIMATE = "animate";
 	private static final String OPTION_PUBLISH_ANIMATE = "publish-animate";
 	private static final String OPTION_VERBOSE = "verbose";
@@ -45,6 +47,7 @@ public class ASConfigCOptions {
 	public boolean unpackageANEs = false;
 	public String storepass = null;
 	public Boolean clean = null;
+	public Boolean watch = null;
 	public IASConfigCCompiler compiler = null;
 	public String animate = null;
 	public Boolean publishAnimate = null;
@@ -75,6 +78,18 @@ public class ASConfigCOptions {
 		}
 		if (line.hasOption(OPTION_AIR)) {
 			air = line.getOptionValue(OPTION_AIR, "air");
+			if (air.equals("bundle")) {
+				String osName = System.getProperty("os.name").toLowerCase();
+				if (osName.startsWith("mac")) {
+					air = AIRPlatform.MAC;
+				} else if (osName.startsWith("windows")) {
+					air = AIRPlatform.WINDOWS;
+				} else {
+					throw new Error(
+							"Adobe AIR target \"bundle\" specified, but current operating system not recognized: "
+									+ System.getProperty("os.name"));
+				}
+			}
 		}
 		if (line.hasOption(OPTION_STOREPASS)) {
 			storepass = line.getOptionValue(OPTION_STOREPASS, null);
@@ -86,6 +101,10 @@ public class ASConfigCOptions {
 		if (line.hasOption(OPTION_CLEAN)) {
 			String cleanString = line.getOptionValue(OPTION_CLEAN, Boolean.TRUE.toString());
 			clean = cleanString.equals(Boolean.TRUE.toString());
+		}
+		if (line.hasOption(OPTION_WATCH)) {
+			String watchString = line.getOptionValue(OPTION_WATCH, Boolean.TRUE.toString());
+			watch = watchString.equals(Boolean.TRUE.toString());
 		}
 		if (line.hasOption(OPTION_ANIMATE)) {
 			animate = line.getOptionValue(OPTION_ANIMATE, null);

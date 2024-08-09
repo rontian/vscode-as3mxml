@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import com.as3mxml.vscode.project.LspJSProject;
 import com.as3mxml.vscode.project.LspProject;
 import com.as3mxml.vscode.project.ProjectOptions;
 import com.as3mxml.vscode.project.VSCodeConfiguration;
+import com.as3mxml.vscode.project.VSCodeProjectConfigurator;
 
 import org.apache.royale.compiler.clients.MXMLJSC;
 import org.apache.royale.compiler.config.ICompilerSettingsConstants;
@@ -54,35 +55,36 @@ public class CompilerProjectUtils {
 
     private static final String PROPERTY_FRAMEWORK_LIB = "royalelib";
 
-    public static ILspProject createProject(ProjectOptions currentProjectOptions, Workspace compilerWorkspace) {
+    public static ILspProject createProject(ProjectOptions currentProjectOptions, Workspace compilerWorkspace,
+            String preferredRoyaleTarget) {
         Path frameworkLibPath = Paths.get(System.getProperty(PROPERTY_FRAMEWORK_LIB));
         boolean frameworkSDKIsRoyale = ActionScriptSDKUtils.isRoyaleFramework(frameworkLibPath);
 
-        Path asjscPath = frameworkLibPath.resolve("../js/bin/asjsc");
-        boolean frameworkSDKIsFlexJS = !frameworkSDKIsRoyale && asjscPath.toFile().exists();
-
         ILspProject project = null;
 
-        //we're going to try to determine what kind of project we need
-        //(either Royale or everything else). if it's a Royale project, we
-        //should choose an appropriate backend.
+        // we're going to try to determine what kind of project we need
+        // (either Royale or everything else). if it's a Royale project, we
+        // should choose an appropriate backend.
         IBackend backend = null;
 
-        //first, start by looking if the targets compiler option is
-        //specified. if it is, we definitely have a Royale project. we'll
-        //use the first target value as the indicator of what the user
-        //thinks is most important for code intelligence (native JS classes
-        //or native SWF classes?)
-        //this isn't ideal because it would be better if we could provide
-        //code intelligence for all targets simultaneously, but this is a
-        //limitation that we need to live with, for now.
+        // first, start by looking if the targets compiler option is
+        // specified. if it is, we definitely have a Royale project. we'll
+        // use the first target value as the indicator of what the user
+        // thinks is most important for code intelligence (native JS classes
+        // or native SWF classes?) unless preferredTarget is set
+        // this isn't ideal because it would be better if we could provide
+        // code intelligence for all targets simultaneously, but this is a
+        // limitation that we need to live with, for now.
         List<String> targets = currentProjectOptions.targets;
         if (targets != null && targets.size() > 0) {
-            //first, check if any targets are specified
-            String firstTarget = targets.get(0);
-            switch (MXMLJSC.JSTargetType.fromString(firstTarget)) {
+            String targetNameToFind = targets.get(0);
+            if (preferredRoyaleTarget != null && targets.contains(preferredRoyaleTarget)) {
+                targetNameToFind = preferredRoyaleTarget;
+            }
+            // first, check if any targets are specified
+            switch (MXMLJSC.JSTargetType.fromString(targetNameToFind)) {
                 case SWF: {
-                    //no backend. fall back to RoyaleProject.
+                    // no backend. fall back to RoyaleProject.
                     backend = null;
                     break;
                 }
@@ -99,18 +101,18 @@ public class CompilerProjectUtils {
                     break;
                 }
                 default: {
-                    //it actually shouldn't matter too much which JS
-                    //backend is used when we're only using the project for
-                    //code intelligence, so this is probably an acceptable
-                    //fallback for just about everything.
-                    //we just want to rule out SWF.
+                    // it actually shouldn't matter too much which JS
+                    // backend is used when we're only using the project for
+                    // code intelligence, so this is probably an acceptable
+                    // fallback for just about everything.
+                    // we just want to rule out SWF.
                     backend = new RoyaleBackend();
                     break;
                 }
             }
         }
-        //if no targets are specified, we can guess whether it's a Royale
-        //project based on the config value.
+        // if no targets are specified, we can guess whether it's a Royale
+        // project based on the config value.
         else if (currentProjectOptions.config.equals(CONFIG_ROYALE)) {
             backend = new RoyaleBackend();
         } else if (currentProjectOptions.config.equals(CONFIG_JS)) {
@@ -118,22 +120,22 @@ public class CompilerProjectUtils {
         } else if (currentProjectOptions.config.equals(CONFIG_NODE)) {
             backend = new NodeBackend();
         }
-        //finally, if the config value is missing, then choose a decent
-        //default backend when the SDK is Royale
-        else if (frameworkSDKIsRoyale || frameworkSDKIsFlexJS) {
+        // finally, if the config value is missing, then choose a decent
+        // default backend when the SDK is Royale
+        else if (frameworkSDKIsRoyale) {
             backend = new RoyaleBackend();
         }
 
-        //if we created a backend, it's a Royale project (RoyaleJSProject)
+        // if we created a backend, it's a Royale project (RoyaleJSProject)
         if (backend != null) {
             project = new LspJSProject(compilerWorkspace, backend);
         }
-        //if we haven't created the project yet, then it's not Royale and
-        //the project should be one that doesn't require a backend.
+        // if we haven't created the project yet, then it's not Royale and
+        // the project should be one that doesn't require a backend.
         if (project == null) {
-            //yes, this is called RoyaleProject, but a *real* Royale project
-            //is RoyaleJSProject...
-            //RoyaleProject is for projects targeting the SWF format.
+            // yes, this is called RoyaleProject, but a *real* Royale project
+            // is RoyaleJSProject...
+            // RoyaleProject is for projects targeting the SWF format.
             project = new LspProject(compilerWorkspace);
         }
         project.setProblems(new ArrayList<>());
@@ -144,21 +146,21 @@ public class CompilerProjectUtils {
         final Path frameworkLibPath = Paths.get(System.getProperty(PROPERTY_FRAMEWORK_LIB));
         final boolean frameworkSDKIsRoyale = ActionScriptSDKUtils.isRoyaleFramework(frameworkLibPath);
 
-        //check if the framework SDK doesn't include the Spark theme
+        // check if the framework SDK doesn't include the Spark theme
         Path sparkPath = frameworkLibPath.resolve("./themes/Spark/spark.css");
         boolean frameworkSDKContainsSparkTheme = sparkPath.toFile().exists();
 
         List<String> compilerOptions = projectOptions.compilerOptions;
         RoyaleProjectConfigurator configurator = null;
         if (project instanceof RoyaleJSProject || frameworkSDKIsRoyale) {
-            configurator = new RoyaleProjectConfigurator(JSGoogConfiguration.class);
-        } else //swf only
+            configurator = new VSCodeProjectConfigurator(JSGoogConfiguration.class);
+        } else // swf only
         {
-            configurator = new RoyaleProjectConfigurator(VSCodeConfiguration.class);
+            configurator = new VSCodeProjectConfigurator(VSCodeConfiguration.class);
         }
         if (frameworkSDKIsRoyale) {
             configurator.setToken(TOKEN_ROYALELIB, System.getProperty(PROPERTY_FRAMEWORK_LIB));
-        } else //not royale
+        } else // not royale
         {
             configurator.setToken(TOKEN_FLEXLIB, System.getProperty(PROPERTY_FRAMEWORK_LIB));
         }
@@ -174,14 +176,14 @@ public class CompilerProjectUtils {
             combinedOptions.addAll(additionalOptions);
         }
 
-        //Github #245: avoid errors from -inline
+        // Github #245: avoid errors from -inline
         combinedOptions.removeIf((option) -> {
             return option.equals("-inline") || option.equals("--inline") || option.equals("-inline=true")
                     || option.equals("--inline=true");
         });
 
-        //not all framework SDKs support a theme (such as Adobe's AIR SDK), so
-        //we clear it for the editor to avoid a missing spark.css file.
+        // not all framework SDKs support a theme (such as Adobe's AIR SDK), so
+        // we clear it for the editor to avoid a missing spark.css file.
         if (!frameworkSDKContainsSparkTheme) {
             combinedOptions.add("-theme=");
         }
@@ -197,15 +199,15 @@ public class CompilerProjectUtils {
             configurator.setConfiguration(combinedOptions.toArray(new String[combinedOptions.size()]),
                     ICompilerSettingsConstants.FILE_SPECS_VAR);
         }
-        //this needs to be set before applyToProject() so that it's in the
-        //configuration buffer before addExternalLibraryPath() is called
+        // this needs to be set before applyToProject() so that it's in the
+        // configuration buffer before addExternalLibraryPath() is called
         configurator.setExcludeNativeJSLibraries(false);
         Path appendConfigPath = frameworkLibPath.resolve("../ide/vscode-as3mxml/vscode-as3mxml-config.xml");
         File appendConfigFile = appendConfigPath.toFile();
         if (appendConfigFile.exists()) {
             configurator.addConfiguration(appendConfigFile);
         } else {
-            //fallback for backwards compatibility
+            // fallback for backwards compatibility
             appendConfigPath = frameworkLibPath.resolve("../ide/vscode-nextgenas/vscode-nextgenas-config.xml");
             appendConfigFile = appendConfigPath.toFile();
             if (appendConfigFile.exists()) {
@@ -220,9 +222,9 @@ public class CompilerProjectUtils {
             return null;
         }
         for (ICompilationUnit unit : project.getCompilationUnits()) {
-            //it's possible for the collection of compilation units to contain
-            //null values, so be sure to check for null values before checking
-            //the file name
+            // it's possible for the collection of compilation units to contain
+            // null values, so be sure to check for null values before checking
+            // the file name
             if (unit == null) {
                 continue;
             }

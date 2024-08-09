@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -98,8 +98,8 @@ public class SimpleProjectConfigStrategy implements IProjectConfigStrategy {
             compilerOptions.add("--include-sources+=" + openPath);
         }
 
-        //the output compiler option needs to be defined or there will be a
-        //null pointer exception
+        // the output compiler option needs to be defined or there will be a
+        // null pointer exception
         compilerOptions.add("--output=fake.swc");
 
         ArrayList<String> targets = null;
@@ -112,6 +112,7 @@ public class SimpleProjectConfigStrategy implements IProjectConfigStrategy {
         options.type = ProjectType.LIB;
         options.config = config;
         options.files = null;
+        options.mainClass = null;
         options.compilerOptions = compilerOptions;
         options.additionalOptions = null;
         options.targets = targets;

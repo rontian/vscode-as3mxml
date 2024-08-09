@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,19 +20,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.as3mxml.vscode.project.ActionScriptProjectData;
-import com.as3mxml.vscode.utils.DefinitionUtils;
-import com.as3mxml.vscode.utils.FileTracker;
-import com.as3mxml.vscode.utils.LanguageServerCompilerUtils;
-import com.as3mxml.vscode.utils.MXMLDataUtils;
-import com.as3mxml.vscode.utils.ActionScriptProjectManager;
-import com.as3mxml.vscode.utils.CompilationUnitUtils.IncludeFileData;
-
 import org.apache.royale.compiler.definitions.IDefinition;
 import org.apache.royale.compiler.internal.mxml.MXMLData;
 import org.apache.royale.compiler.mxml.IMXMLTagData;
 import org.apache.royale.compiler.tree.as.IASNode;
 import org.apache.royale.compiler.tree.as.IIdentifierNode;
+import org.apache.royale.compiler.tree.mxml.IMXMLStyleNode;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.Position;
@@ -40,6 +33,14 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TypeDefinitionParams;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+
+import com.as3mxml.vscode.project.ActionScriptProjectData;
+import com.as3mxml.vscode.utils.ActionScriptProjectManager;
+import com.as3mxml.vscode.utils.CompilationUnitUtils.IncludeFileData;
+import com.as3mxml.vscode.utils.DefinitionUtils;
+import com.as3mxml.vscode.utils.FileTracker;
+import com.as3mxml.vscode.utils.LanguageServerCompilerUtils;
+import com.as3mxml.vscode.utils.MXMLDataUtils;
 
 public class TypeDefinitionProvider {
 	private static final String FILE_EXTENSION_MXML = ".mxml";
@@ -97,8 +98,8 @@ public class TypeDefinitionProvider {
 					}
 					return Either.forLeft(result);
 				}
-				//if we're inside an <fx:Script> tag, we want ActionScript lookup,
-				//so that's why we call isMXMLTagValidForCompletion()
+				// if we're inside an <fx:Script> tag, we want ActionScript lookup,
+				// so that's why we call isMXMLTagValidForCompletion()
 				if (MXMLDataUtils.isMXMLCodeIntelligenceAvailableForTag(offsetTag)) {
 					List<? extends Location> result = mxmlTypeDefinition(offsetTag, currentOffset, projectData);
 					if (cancelToken != null) {
@@ -109,6 +110,10 @@ public class TypeDefinitionProvider {
 			}
 		}
 		IASNode offsetNode = actionScriptProjectManager.getOffsetNode(path, currentOffset, projectData);
+		if (offsetNode instanceof IMXMLStyleNode) {
+			// special case for <fx:Style>
+			return Either.forLeft(Collections.emptyList());
+		}
 		List<? extends Location> result = actionScriptTypeDefinition(offsetNode, projectData);
 		if (cancelToken != null) {
 			cancelToken.checkCanceled();
@@ -119,7 +124,7 @@ public class TypeDefinitionProvider {
 	private List<? extends Location> actionScriptTypeDefinition(IASNode offsetNode,
 			ActionScriptProjectData projectData) {
 		if (offsetNode == null) {
-			//we couldn't find a node at the specified location
+			// we couldn't find a node at the specified location
 			return Collections.emptyList();
 		}
 
@@ -131,8 +136,8 @@ public class TypeDefinitionProvider {
 		}
 
 		if (definition == null) {
-			//VSCode may call typeDefinition() when there isn't necessarily a
-			//type definition referenced at the current position.
+			// VSCode may call typeDefinition() when there isn't necessarily a
+			// type definition referenced at the current position.
 			return Collections.emptyList();
 		}
 		List<Location> result = new ArrayList<>();
@@ -145,13 +150,13 @@ public class TypeDefinitionProvider {
 		IDefinition definition = MXMLDataUtils.getTypeDefinitionForMXMLNameAtOffset(offsetTag, currentOffset,
 				projectData.project);
 		if (definition == null) {
-			//VSCode may call definition() when there isn't necessarily a
-			//definition referenced at the current position.
+			// VSCode may call typeDefinition() when there isn't necessarily a
+			// definition referenced at the current position.
 			return Collections.emptyList();
 		}
 
 		if (MXMLDataUtils.isInsideTagPrefix(offsetTag, currentOffset)) {
-			//ignore the tag's prefix
+			// ignore the tag's prefix
 			return Collections.emptyList();
 		}
 

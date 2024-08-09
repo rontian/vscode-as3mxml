@@ -1,6 +1,6 @@
 # ActionScript & MXML extension for Visual Studio Code
 
-This README file is intended for contributors to the extension. If you simply want to install the latest stable version of the extension, please visit the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=bowlerhatllc.vscode-nextgenas). For help using the extension, visit the [vscode-as3mxml wiki](https://github.com/BowlerHatLLC/vscode-as3mxml/wiki) for detailed instructions.
+This README file is intended for contributors to the extension. If you simply want to install the latest stable version of the extension, please visit the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=bowlerhatllc.vscode-as3mxml). For help using the extension, visit the [vscode-as3mxml wiki](https://github.com/BowlerHatLLC/vscode-as3mxml/wiki) for detailed instructions.
 
 ## Modules
 
@@ -20,7 +20,7 @@ This project is divided into several modules.
 
 ## Build instructions
 
-Requires [Apache Maven](https://maven.apache.org/) and [Node.js](https://nodejs.org/). Run the following command in the root directory to build the extension:
+Requires JDK 8 (or newer), [Apache Maven](https://maven.apache.org/) and [Node.js](https://nodejs.org/). Run the following command in the root directory to build the extension:
 
 ```
 mvn clean package
@@ -43,11 +43,11 @@ Note: If the extension cannot find Apache Royale on your system automatically, y
 
 ## Support this project
 
-The [ActionScript & MXML extension for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=bowlerhatllc.vscode-nextgenas) is developed by [Josh Tynjala](http://patreon.com/josht) with the support of community members like you.
+The [ActionScript & MXML extension for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=bowlerhatllc.vscode-as3mxml) is developed by [Josh Tynjala](http://patreon.com/josht) with the support of community members like you.
 
 [Support Josh Tynjala on Patreon](http://patreon.com/josht)
 
 Special thanks to the following sponsors for their generous support:
 
-- [Moonshine IDE](http://moonshine-ide.com/)
-- [Dedoose](https://www.dedoose.com/)
+- [Moonshine IDE](https://moonshine-ide.com/)
+- [Jackbox Games](https://jackboxgames.com)

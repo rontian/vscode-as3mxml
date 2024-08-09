@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,10 +13,16 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package com.as3mxml.asconfigc.compiler;
+import * as vscode from "vscode";
 
-public class JSOutputType {
-	public static final String JSC = "jsc";
-	public static final String NODE = "node";
-	public static final String FLEXJS = "flexjs";
+export default function createRoyaleTargetStatusBarItem(): vscode.StatusBarItem {
+  let statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    98
+  );
+  statusBarItem.tooltip = "Set Preferred Royale Target";
+  statusBarItem.command = "as3mxml.selectRoyalePreferredTarget";
+  statusBarItem.text = "SWF";
+  statusBarItem.hide();
+  return statusBarItem;
 }

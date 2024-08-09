@@ -1,8 +1,8 @@
 {
-  "name": "vscode-nextgenas",
+  "name": "vscode-as3mxml",
   "displayName": "ActionScript & MXML",
   "description": "Language support for ActionScript and MXML",
-  "version": "1.6.0",
+  "version": "1.21.1",
   "publisher": "bowlerhatllc",
   "homepage": "https://as3mxml.com/",
   "repository": {
@@ -11,6 +11,10 @@
   },
   "bugs": {
     "url": "https://github.com/BowlerHatLLC/vscode-as3mxml/issues"
+  },
+  "qna": "https://github.com/BowlerHatLLC/vscode-as3mxml/discussions",
+  "sponsor": {
+    "url": "https://patreon.com/josht"
   },
   "license": "Apache-2.0",
   "private": true,
@@ -31,26 +35,23 @@
     "build-debug": "mvn package"
   },
   "engines": {
-    "vscode": "^1.37.0"
+    "vscode": "^1.70.0"
   },
-  "extensionDependencies": [
-    "bowlerhatllc.vscode-swf-debug"
-  ],
   "devDependencies": {
-    "@rgrove/parse-xml": "^3.0.0",
-    "@types/mocha": "^8.2.1",
-    "@types/node": "^10.17.55",
-    "@types/vscode": "^1.37.0",
-    "glob": "^7.1.6",
-    "json5": "2.2.0",
-    "mocha": "^8.3.2",
-    "ts-loader": "^8.0.18",
-    "typescript": "^4.2.3",
-    "vsce": "^1.87.0",
-    "vscode-jsonrpc": "^6.0.0",
-    "vscode-languageclient": "^6.1.4",
-    "webpack": "^5.27.0",
-    "webpack-cli": "^4.5.0"
+    "@rgrove/parse-xml": "^4.1.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^14.18.63",
+    "@types/vscode": "^1.70.0",
+    "glob": "^8.1.0",
+    "json5": "^2.2.3",
+    "mocha": "^10.4.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.4.5",
+    "@vscode/vsce": "^2.27.0",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageclient": "^9.0.1",
+    "webpack": "^5.92.0",
+    "webpack-cli": "^5.1.4"
   },
   "activationEvents": [
     "onLanguage:actionscript",
@@ -62,6 +63,9 @@
     "onView:actionScriptSourcePaths",
     "onCommand:as3mxml.organizeImportsInUri",
     "onCommand:as3mxml.organizeImportsInDirectory",
+    "onCommand:as3mxml.removeUnusedImportsInUri",
+    "onCommand:as3mxml.addMissingImportsInUri",
+    "onCommand:as3mxml.sortImportsInUri",
     "onCommand:as3mxml.saveSessionPassword",
     "onCommand:as3mxml.selectWorkspaceSDK",
     "onCommand:as3mxml.restartServer",
@@ -70,10 +74,16 @@
     "onCommand:as3mxml.quickCompile",
     "onCommand:as3mxml.quickCompileAndDebug",
     "onCommand:as3mxml.quickCompileAndRun",
-    "onCommand:as3mxml.getActiveProjectURIs"
+    "onCommand:as3mxml.getActiveProjectURIs",
+    "onCommand:as3mxml.createNewProject"
   ],
   "contributes": {
     "commands": [
+      {
+        "command": "as3mxml.createNewProject",
+        "title": "Create New Project",
+        "category": "ActionScript"
+      },
       {
         "command": "as3mxml.saveSessionPassword",
         "title": "Save Session Password",
@@ -92,6 +102,18 @@
       {
         "command": "as3mxml.organizeImportsInUri",
         "title": "Organize Imports"
+      },
+      {
+        "command": "as3mxml.removeUnusedImportsInUri",
+        "title": "Remove Unused Imports"
+      },
+      {
+        "command": "as3mxml.addMissingImportsInUri",
+        "title": "Remove Unused Imports"
+      },
+      {
+        "command": "as3mxml.sortImportsInUri",
+        "title": "Sort Imports"
       },
       {
         "command": "as3mxml.organizeImportsInDirectory",
@@ -122,12 +144,14 @@
       {
         "key": "ctrl+enter",
         "mac": "cmd+enter",
-        "command": "as3mxml.quickCompileAndRun"
+        "command": "as3mxml.quickCompileAndRun",
+        "when": "as3mxml.codeIntelligenceReady && config.as3mxml.quickCompile.enabled"
       },
       {
         "key": "ctrl+shift+enter",
         "mac": "cmd+shift+enter",
-        "command": "as3mxml.quickCompileAndDebug"
+        "command": "as3mxml.quickCompileAndDebug",
+        "when": "as3mxml.codeIntelligenceReady && config.as3mxml.quickCompile.enabled"
       }
     ],
     "menus": {
@@ -141,6 +165,18 @@
           "when": "false"
         },
         {
+          "command": "as3mxml.removeUnusedImportsInUri",
+          "when": "false"
+        },
+        {
+          "command": "as3mxml.addMissingImportsInUri",
+          "when": "false"
+        },
+        {
+          "command": "as3mxml.sortImportsInUri",
+          "when": "false"
+        },
+        {
           "command": "as3mxml.organizeImportsInDirectory",
           "when": "false"
         }
@@ -148,7 +184,7 @@
       "explorer/context": [
         {
           "command": "as3mxml.organizeImportsInDirectory",
-          "when": "explorerResourceIsFolder"
+          "when": "as3mxml.codeIntelligenceReady && explorerResourceIsFolder"
         }
       ]
     },
@@ -157,10 +193,17 @@
         {
           "id": "actionScriptSourcePaths",
           "name": "ActionScript Source Path",
-          "when": "resourceLangId =~ /(actionscript|mxml)/"
+          "when": "as3mxml.codeIntelligenceReady || resourceLangId =~ /(actionscript|mxml)/ || resourceFilename =~ /^asconfig(\\.\\w+)?\\.json$/"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "explorer",
+        "contents": "%viewsWelcome.workbench.createNewActionScriptProject%",
+        "when": "workspaceFolderCount == 0"
+      }
+    ],
     "languages": [
       {
         "id": "actionscript",
@@ -172,8 +215,7 @@
           "AS3",
           "as3",
           "AS",
-          "as",
-          "nextgenas"
+          "as"
         ],
         "configuration": "./actionscript.configuration.json"
       },
@@ -231,14 +273,6 @@
       }
     ],
     "problemMatchers": [
-      {
-        "name": "nextgenas_nomatch",
-        "label": "No Problem Matcher (Deprecated: Use empty array instead)",
-        "applyTo": "allDocuments",
-        "pattern": {
-          "regexp": "^$"
-        }
-      },
       {
         "name": "royale",
         "label": "Apache Royale",
@@ -312,6 +346,10 @@
           "clean": {
             "type": "boolean",
             "description": "Indicates if the output folder should be cleaned"
+          },
+          "watch": {
+            "type": "boolean",
+            "description": "Indicates if the compiler should watch for file changes (Royale only)"
           }
         }
       },
@@ -392,6 +430,11 @@
           "default": false,
           "description": "(Advanced) Specifies whether asconfigc will display verbose output during builds."
         },
+        "as3mxml.quickCompile.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Specifies if the experimental quick compile commands are enabled or not."
+        },
         "as3mxml.languageServer.jvmargs": {
           "type": "string",
           "default": null,
@@ -431,20 +474,160 @@
           "default": null,
           "description": "(Advanced) Specifies the absolute path of the Adobe Animate executable."
         },
-        "nextgenas.sdk.framework": {
-          "deprecationMessage": "DEPRECATED: Use as3mxml.sdk.framework instead."
+        "as3mxml.codeGeneration.getterSetter.forcePublicFunctions": {
+          "type": "boolean",
+          "default": false,
+          "description": "When generating getters and setters, force the functions to be in the public namespace, instead of the original namespace of the variable"
         },
-        "nextgenas.sdk.searchPaths": {
-          "deprecationMessage": "DEPRECATED: Use as3mxml.sdk.searchPaths instead."
+        "as3mxml.codeGeneration.getterSetter.forcePrivateVariable": {
+          "type": "boolean",
+          "default": true,
+          "description": "When generating getters and setters, force the original variable to be in the private namespace, instead of keeping its original namespace"
         },
-        "nextgenas.asconfigc.useBundled": {
-          "deprecationMessage": "DEPRECATED: Use as3mxml.asconfigc.useBundled instead."
+        "as3mxml.sources.organizeImports.addMissingImports": {
+          "type": "boolean",
+          "default": true,
+          "description": "When organizing imports, determines if missing imports are added automatically (if there is only one matching symbol)"
         },
-        "nextgenas.java": {
-          "deprecationMessage": "DEPRECATED: Use as3mxml.java.path instead."
+        "as3mxml.sources.organizeImports.removeUnusedImports": {
+          "type": "boolean",
+          "default": true,
+          "description": "When organizing imports, determines if unused imports are removed or kept"
         },
-        "nextgenas.sdk.editor": {
-          "deprecationMessage": "DEPRECATED: Use as3mxml.sdk.editor instead."
+        "as3mxml.sources.organizeImports.insertNewLineBetweenTopLevelPackages": {
+          "type": "boolean",
+          "default": true,
+          "description": "When organizing imports, determines if a new line is inserted between top level packages"
+        },
+        "as3mxml.format.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable the ActionScript and MXML formatter"
+        },
+        "as3mxml.format.collapseEmptyBlocks": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines collapse behavior for empty {} blocks"
+        },
+        "as3mxml.format.insertSpaceAfterCommaDelimiter": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines space handling after comma delimiter in arrays and object literals"
+        },
+        "as3mxml.format.insertSpaceBetweenMetadataAttributes": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines space handling after the comma between metadata attributes"
+        },
+        "as3mxml.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines space handling between the function keyword and the opening parenthesis of anonymous functions"
+        },
+        "as3mxml.format.insertSpaceAfterKeywordsInControlFlowStatements": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines space handling between control flow keywords (like if, for, and while) and the opening parenthesis"
+        },
+        "as3mxml.format.insertSpaceAfterSemicolonInForStatements": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines space handling for semicolons inside the parentheses of for loop statements"
+        },
+        "as3mxml.format.insertSpaceBeforeAndAfterBinaryOperators": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines space handling on the left and right sides of binary operators"
+        },
+        "as3mxml.format.insertSpaceAtStartOfLineComment": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines space handling before the text of line comments"
+        },
+        "as3mxml.format.mxmlInsertNewLineBetweenAttributes": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines new line handling for MXML attributes"
+        },
+        "as3mxml.format.mxmlAlignAttributes": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines alignment handling for MXML attributes"
+        },
+        "as3mxml.format.maxPreserveNewLines": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines the maximum number of empty new lines between non-empty lines"
+        },
+        "as3mxml.format.placeOpenBraceOnNewLine": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null,
+          "description": "Defines new line handling for open { braces"
+        },
+        "as3mxml.format.semicolons": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "ignore",
+            "insert",
+            "remove"
+          ],
+          "default": null,
+          "description": "Defines automatic semicolon insertion behavior"
+        },
+        "as3mxml.lint.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable or disable the ActionScript and MXML linter"
+        },
+        "actionscript.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "(Advanced) Logs the communication between Visual Studio Code and the ActionScript & MXML language server",
+          "scope": "window"
         }
       }
     },
@@ -458,6 +641,5 @@
         "path": "./snippets/mxml.json"
       }
     ]
-  },
-  "dependencies": {}
+  }
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2021 Bowler Hat LLC
+Copyright 2016-2024 Bowler Hat LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 import * as fs from "fs";
-import * as json5 from "json5";
 import * as path from "path";
 import * as vscode from "vscode";
+import json5 from "json5/dist/index.mjs";
 
 const FILE_ASCONFIG_JSON = "asconfig.json";
 const FILE_EXTENSION_AS = ".as";
@@ -25,23 +25,23 @@ const FILE_EXTENSION_MXML = ".mxml";
 export class ActionScriptSourcePath extends vscode.TreeItem {
   constructor(
     file: vscode.Uri | string,
-    workspaceFolder: vscode.WorkspaceFolder
+    workspaceFolder: vscode.WorkspaceFolder | null
   ) {
     let contextValue: string = null;
     let command: vscode.Command;
     let collapsibleState = vscode.TreeItemCollapsibleState.None;
-    let uri: vscode.Uri = undefined;
+    let resourceUri: vscode.Uri = undefined;
     let label: string = undefined;
     if (typeof file === "string") {
       label = file;
     } //uri
     else {
-      uri = file;
-      if (fs.statSync(uri.fsPath).isDirectory()) {
+      resourceUri = file;
+      if (fs.statSync(resourceUri.fsPath).isDirectory()) {
         collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
         contextValue = "folder";
       } else {
-        let extname = path.extname(uri.fsPath);
+        let extname = path.extname(resourceUri.fsPath);
         if (extname === FILE_EXTENSION_AS) {
           contextValue = "actionscript";
         } else if (extname === FILE_EXTENSION_MXML) {
@@ -50,23 +50,25 @@ export class ActionScriptSourcePath extends vscode.TreeItem {
         command = {
           title: "Open File",
           command: "vscode.open",
-          arguments: [uri],
+          arguments: [resourceUri],
         };
       }
     }
     super(label, collapsibleState);
-    this.resourceUri = uri;
+    this.resourceUri = resourceUri;
     this.command = command;
     this.contextValue = contextValue;
     this.workspaceFolder = workspaceFolder;
   }
 
-  workspaceFolder: vscode.WorkspaceFolder;
+  workspaceFolder: vscode.WorkspaceFolder | null;
 }
 
 export default class ActionScriptSourcePathDataProvider
-  implements vscode.TreeDataProvider<ActionScriptSourcePath> {
-  private _onDidChangeTreeData: vscode.EventEmitter<ActionScriptSourcePath | null> = new vscode.EventEmitter<ActionScriptSourcePath | null>();
+  implements vscode.TreeDataProvider<ActionScriptSourcePath>
+{
+  private _onDidChangeTreeData: vscode.EventEmitter<ActionScriptSourcePath | null> =
+    new vscode.EventEmitter<ActionScriptSourcePath | null>();
   private _rootSourcePaths: ActionScriptSourcePath[];
   private _rootPathStrings: Set<string>;
 
@@ -78,8 +80,8 @@ export default class ActionScriptSourcePathDataProvider
     this.refreshSourcePaths();
   }
 
-  readonly onDidChangeTreeData: vscode.Event<ActionScriptSourcePath | null> = this
-    ._onDidChangeTreeData.event;
+  readonly onDidChangeTreeData: vscode.Event<ActionScriptSourcePath | null> =
+    this._onDidChangeTreeData.event;
 
   getTreeItem(element: ActionScriptSourcePath): vscode.TreeItem {
     return element;
@@ -91,10 +93,7 @@ export default class ActionScriptSourcePathDataProvider
     if (!element) {
       if (this._rootSourcePaths.length === 0) {
         return Promise.resolve([
-          new ActionScriptSourcePath(
-            "No source paths",
-            element.workspaceFolder
-          ),
+          new ActionScriptSourcePath("No source paths", null),
         ]);
       }
       return Promise.resolve(this._rootSourcePaths);
